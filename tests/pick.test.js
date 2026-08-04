@@ -1,0 +1,197 @@
+// @vitest-environment jsdom
+//
+// The picker is `web_accessible`: any website can navigate to it with a URL of
+// its choosing. So the tests that matter most here are not "does the button
+// work" but "what does it do with a hostile query string".
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// From the project root, not from import.meta.url: under the jsdom environment
+// that is an http URL and readFileSync will not take it.
+const HTML = readFileSync(join(process.cwd(), 'src/pick/pick.html'), 'utf8');
+const WORK = 'firefox-container-2';
+const HOME = 'firefox-container-3';
+
+function makeArea(seed = {}) {
+  const store = { ...seed };
+  return {
+    store,
+    get: async (k) => (k in store ? { [k]: store[k] } : {}),
+    set: async (o) => Object.assign(store, o),
+  };
+}
+
+async function mount(url, { containers = [], firefox = true, local = {} } = {}) {
+  document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
+  const search = url === undefined ? '' : `?url=${encodeURIComponent(url)}`;
+  // jsdom will not let location be assigned, so it is replaced outright.
+  delete globalThis.location;
+  globalThis.location = new URL(`https://ext/pick.html${search}`);
+  globalThis.chrome = {
+    runtime: {
+      getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
+      sendMessage: vi.fn(),
+    },
+    storage: { sync: makeArea(), local: makeArea(local) },
+    tabs: {
+      create: vi.fn(async () => ({ id: 9 })),
+      getCurrent: vi.fn(async () => ({ id: 1 })),
+      remove: vi.fn(async () => {}),
+    },
+  };
+  globalThis.browser = firefox
+    ? { contextualIdentities: { query: vi.fn(async () => containers) } }
+    : undefined;
+  vi.resetModules();
+  await import('../src/pick/pick.js');
+  await settle();
+}
+
+/** The page does several awaits before it is painted. */
+async function settle(times = 6) {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+const $ = (id) => document.getElementById(id);
+const choices = () => [...$('choices').querySelectorAll('button')];
+
+beforeEach(() => {
+  Object.defineProperty(globalThis.navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: vi.fn(async () => {}) },
+  });
+});
+
+afterEach(() => {
+  delete globalThis.chrome;
+  delete globalThis.browser;
+  vi.restoreAllMocks();
+});
+
+describe('a hostile query string', () => {
+  it('refuses anything that is not http(s), and offers no way to open it', async () => {
+    // The page is web_accessible. Without this a site could link to it with
+    // javascript: or file: and the picker would be the thing that opens it.
+    for (const bad of ['javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,<h1>x', 'x']) {
+      await mount(bad);
+      expect($('url').textContent).toMatch(/not a link/i);
+      expect($('choices').hidden).toBe(true);
+    }
+  });
+
+  it('shows the address as text, never as markup', async () => {
+    // A clickable link here would be a one-click open of whatever a stranger
+    // put in the query string.
+    await mount('https://example.com/?x=<img src=x onerror=alert(1)>');
+    expect($('url').querySelector('a')).toBeNull();
+    expect($('url').querySelector('img')).toBeNull();
+    expect($('url').textContent).toContain('example.com');
+  });
+
+  it('copes with no url at all', async () => {
+    await mount(undefined);
+    expect($('choices').hidden).toBe(true);
+  });
+});
+
+describe('choosing', () => {
+  const two = [
+    { cookieStoreId: WORK, name: 'Work', color: 'blue' },
+    { cookieStoreId: HOME, name: 'Home', color: 'green' },
+  ];
+
+  it('lists the containers, with their colours', async () => {
+    await mount('https://example.com/', { containers: two });
+    expect(choices().map((b) => b.textContent)).toEqual(['Work', 'Home']);
+    expect(choices()[0].querySelector('.dot').style.background).toBeTruthy();
+  });
+
+  it('offers the one used last first', async () => {
+    // The same link from the same app usually wants the same container, and the
+    // point of this page is to be quicker than doing it by hand.
+    await mount('https://example.com/', {
+      containers: two,
+      local: { localSettings: { lastContainer: HOME } },
+    });
+    expect(choices().map((b) => b.textContent)).toEqual(['Home', 'Work']);
+  });
+
+  it('opens in the chosen container and tells the background it was us', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    choices()[0].click();
+    await settle();
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'https://example.com/doc',
+      active: true,
+      cookieStoreId: WORK,
+    });
+    // Without the message the picker's own tab is intercepted straight back
+    // into the picker, for ever.
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'linkward:opened',
+      tabId: 9,
+    });
+  });
+
+  it('opens without a container when asked to', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    $('plain').click();
+    await settle();
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'https://example.com/doc',
+      active: true,
+    });
+  });
+
+  it('copies without opening anything', async () => {
+    // The whole reason the button exists: sometimes the answer is "not now".
+    await mount('https://example.com/doc', { containers: two });
+    $('copy').click();
+    await settle();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/doc');
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('says so when the clipboard cannot be reached', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    navigator.clipboard.writeText = vi.fn(async () => {
+      throw new Error('denied');
+    });
+    $('copy').click();
+    await settle();
+    expect($('status').textContent).toMatch(/select the link above/i);
+  });
+
+  it('says so when the container has gone since the page loaded', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    chrome.tabs.create = vi.fn(async () => {
+      throw new Error('No cookie store exists with ID firefox-container-2');
+    });
+    choices()[0].click();
+    await settle();
+    expect($('status').hidden).toBe(false);
+    expect($('status').textContent).toMatch(/Could not open it there/);
+  });
+
+  it('closes its own tab rather than leaving it behind', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    $('cancel').click();
+    await settle();
+    expect(chrome.tabs.remove).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('what it admits to', () => {
+  it('tells a Chrome user what Chrome cannot do', async () => {
+    await mount('https://example.com/', { firefox: false });
+    expect($('note').hidden).toBe(false);
+    expect($('note').textContent).toMatch(/cannot open/i);
+  });
+
+  it('says there is nothing to choose when Firefox has no containers', async () => {
+    await mount('https://example.com/', { containers: [] });
+    expect($('note').textContent).toMatch(/no containers/i);
+  });
+});
