@@ -35,6 +35,7 @@ function makeChrome({ firefox = true, granted = true, settings = { enabled: true
   return {
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
+      openOptionsPage: vi.fn(async () => {}),
       onInstalled: makeEvent(),
       onStartup: makeEvent(),
       onMessage: makeEvent(),
@@ -164,5 +165,35 @@ describe('what it hands to the picker', () => {
     await c.tabs.onCreated.emit({ id: 7 });
     const { redirectUrl } = await ask(c, { url: 'https://example.com/a?b=1#c' });
     expect(new URL(redirectUrl).searchParams.get('url')).toBe('https://example.com/a?b=1#c');
+  });
+});
+
+describe('the first thing it does after being installed', () => {
+  it('opens its own settings page, because nothing works until someone does', async () => {
+    // Every permission this needs is granted on a click, so a fresh install is
+    // inert. A link opening exactly as it always did reads as broken, and
+    // nobody goes hunting for the settings of an extension that has never
+    // visibly done anything.
+    const c = await boot();
+    await c.runtime.onInstalled.emit({ reason: 'install' });
+    expect(c.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+
+  it('does not reopen it on an update or a browser restart', async () => {
+    // Reopening a settings tab behind someone's back on every auto-update is
+    // how an extension gets uninstalled.
+    const c = await boot();
+    await c.runtime.onInstalled.emit({ reason: 'update' });
+    await c.runtime.onStartup.emit();
+    expect(c.runtime.openOptionsPage).not.toHaveBeenCalled();
+  });
+
+  it('still arms the listener when it was an update', async () => {
+    const c = await boot({ settings: { enabled: true } });
+    await c.runtime.onInstalled.emit({ reason: 'update' });
+    expect(c.webRequest.onBeforeRequest.hasListener).toBeTruthy();
+    await c.tabs.onCreated.emit({ id: 7 });
+    const answer = await ask(c, {});
+    expect(answer.redirectUrl).toContain('pick/pick.html');
   });
 });

@@ -134,10 +134,10 @@ that never reaches `main`.
 
 ## When a release does not publish
 
-| Message                         | Meaning                                                                                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400 Publish condition not met` | The zip is up, but the **Privacy practices** tab needs completing. Every newly added permission needs its own justification, which is why an otherwise routine release suddenly stops publishing. |
-| `ITEM_NOT_UPDATABLE`            | Nothing was uploaded — a previous submission is still in review. Wait, then re-run the workflow with `tag` set to that version.                                                                   |
+| Message                         | Meaning                                                                                                                                                                                                                                                                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400 Publish condition not met` | The zip is up, but the **Privacy practices** tab needs completing. Every newly added permission needs its own justification, which is why an otherwise routine release suddenly stops publishing.                                                                                                                      |
+| `ITEM_NOT_UPDATABLE`            | Nothing was uploaded — a previous submission is still in review. Wait, then re-run the workflow with `tag` set to that version. **Firefox is held back too**, so the two stores cannot end up on different versions; a privacy gate does not hold it back, because that package is already up and publishes by itself. |
 
 Both open a tracking issue so a green run that shipped nothing cannot go
 unnoticed. It closes itself when a later run publishes.

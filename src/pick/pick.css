@@ -137,3 +137,16 @@ h1 {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* The first-run notice. Deliberately not muted like .note: it is the one thing
+   on the page that has to be read, because until it is acted on the extension
+   does nothing at all. */
+.setup {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-bg);
+  font-size: 13px;
+  line-height: 1.5;
+}

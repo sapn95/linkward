@@ -417,12 +417,13 @@ jobs:
             echo "::warning::$TAG is already in the Chrome review queue; nothing to re-upload."
             exit 0
           else
-            why='**Nothing was uploaded.** The store refuses a new upload while a previous submission is still in review.'
+            why='**Nothing was uploaded.** The store refuses a new upload while a previous submission is still in review. Firefox was held back too, so that the two stores do not end up on different versions.'
             fix="$(
               printf '%s\n' \
                 '1. Wait for the pending submission to clear (the dashboard shows its state).' \
-                "2. Re-run **Actions -> Release -> Run workflow** with the \`tag\` input set to \`$TAG\`."
+                "2. Re-run **Actions -> Release -> Run workflow** with the \`tag\` input set to \`$TAG\`. Both stores get it together."
             )"
+            unaffected='The GitHub release exists; neither store has this version yet.'
           fi
 
           body="$(
@@ -430,7 +431,7 @@ jobs:
               "Tag: \`$TAG\` — [release run]($RUN_URL)" '' \
               "$why" '' \
               '### What to do' '' "$fix" '' \
-              'The GitHub release and the Firefox submission are unaffected — this is only the Chrome side.' '' \
+              "${unaffected:-The GitHub release and the Firefox submission are unaffected — this is only the Chrome side.}" '' \
               'This issue closes itself as soon as a release run publishes to the Chrome Web Store.'
           )"
 
@@ -457,8 +458,19 @@ jobs:
             echo "::warning::AMO secrets incomplete — skipping Firefox publish. See docs/publishing.md."
           fi
 
+      # Held back on purpose when Chrome could not take the package at all. The
+      # two stores review independently, so one of them refusing an upload while
+      # the other accepts it is how "Chrome is on 0.2.1, Firefox is on 0.2.2"
+      # happens — and a bug report then describes a build nobody can reproduce.
+      # A privacy gate does NOT hold Firefox back: that package IS uploaded and
+      # publishes as soon as the tab is finished, so the versions still converge.
+      - name: Hold Firefox back to keep the two stores on one version
+        if: ${{ !cancelled() && steps.amo.outputs.ready == 'true' && steps.cwspublish.outputs.blocked == 'in_review' }}
+        run: |
+          echo "::warning::Not submitted to AMO — the Chrome Web Store could not take this version, and shipping it to one store only would leave the two on different versions. Re-run with the 'tag' input once Chrome frees up and both go together."
+
       - name: Sign & publish to Firefox AMO
-        if: ${{ !cancelled() && steps.amo.outputs.ready == 'true' }}
+        if: ${{ !cancelled() && steps.amo.outputs.ready == 'true' && steps.cwspublish.outputs.blocked != 'in_review' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
