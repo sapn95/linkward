@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>linkward — store screenshot</title>
+    <!--
+      A store screenshot, 1280x800, as ONE self-contained file: no modules, no
+      chrome.* stubs, no local server. That is the whole reason it works where
+      rendering the real page did not — a file like this opens straight from
+      disk, in any browser, and can be screenshotted with nothing installed.
+
+      It is a staged picture of the picker, not the page itself. Keep it in step
+      by hand when src/pick/pick.css changes; the colours below are copied from
+      there.
+    -->
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #16181d;
+        --muted: #5d6470;
+        --border: #d9dde5;
+        --accent: #2f6feb;
+        --accent-bg: #eaf1ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      .stage {
+        width: 1280px;
+        height: 800px;
+        display: flex;
+        align-items: center;
+        gap: 72px;
+        padding: 0 96px;
+        background:
+          radial-gradient(900px 600px at 110% -10%, #e3ecff 0%, rgba(227, 236, 255, 0) 60%), #f5f6f8;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        color: var(--fg);
+      }
+      .pitch {
+        width: 430px;
+        flex: none;
+      }
+      .pitch h1 {
+        margin: 0 0 18px;
+        font-size: 44px;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+      }
+      .pitch p {
+        margin: 0 0 14px;
+        font-size: 19px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .pitch strong {
+        color: var(--fg);
+      }
+      /* The window the picker is drawn inside, so it reads as a browser tab
+         rather than as a floating mock-up. */
+      .window {
+        flex: 1;
+        border-radius: 14px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        box-shadow: 0 24px 60px rgb(16 24 40 / 14%);
+        overflow: hidden;
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        background: #f0f2f6;
+      }
+      .dot-r {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #d9dde5;
+      }
+      .page {
+        padding: 34px 38px 40px;
+      }
+      .page h2 {
+        margin: 0 0 12px;
+        font-size: 21px;
+      }
+      .url {
+        margin: 0 0 24px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .choices {
+        list-style: none;
+        margin: 0 0 20px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .choices li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 13px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 15px;
+      }
+      /* The one the cursor is on, so the picture shows an action mid-flight. */
+      .choices li.on {
+        background: var(--accent-bg);
+        border-color: var(--accent);
+      }
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .row {
+        display: flex;
+        gap: 9px;
+        margin-bottom: 16px;
+      }
+      .row span {
+        padding: 9px 15px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--accent);
+        font-size: 14px;
+      }
+      .row span.quiet {
+        color: var(--muted);
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .box {
+        width: 15px;
+        height: 15px;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background: var(--accent);
+        position: relative;
+      }
+      .box::after {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid #fff;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="pitch">
+        <h1>Asks first.</h1>
+        <p>
+          A link from Slack, Outlook or the terminal used to open wherever the browser felt like
+          putting it. Usually the <strong>wrong identity</strong>.
+        </p>
+        <p>
+          linkward stops it <strong>before the page loads</strong> and asks which container it
+          belongs in — or copies the link and opens nothing at all.
+        </p>
+        <p>Nothing is fetched until you have chosen.</p>
+      </div>
+
+      <div class="window">
+        <div class="chrome">
+          <span class="dot-r"></span><span class="dot-r"></span><span class="dot-r"></span>
+        </div>
+        <div class="page">
+          <h2>Where should this open?</h2>
+          <p class="url">
+            https://example.sharepoint.com/sites/finance/Shared%20Documents/Q3-forecast.xlsx?web=1
+          </p>
+          <ul class="choices">
+            <li class="on"><span class="dot" style="background: #ff613d"></span>Work</li>
+            <li><span class="dot" style="background: #51cd00"></span>Personal</li>
+            <li><span class="dot" style="background: #ff4bda"></span>Admin</li>
+          </ul>
+          <div class="row">
+            <span>Open without a container</span>
+            <span>Copy the link, open nothing</span>
+            <span class="quiet">Close this tab</span>
+          </div>
+          <div class="check">
+            <span class="box"></span> Remember this for
+            <code>example.sharepoint.com</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
