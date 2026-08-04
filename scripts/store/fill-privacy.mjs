@@ -9,7 +9,7 @@
 // Field names come from the account's own language (German here), so the
 // selectors match on the part that is stable across languages: the permission
 // name itself.
-import { dashboard } from './dashboard.mjs';
+import { dashboard, labelsOf } from './dashboard.mjs';
 
 const ITEM = 'pbegofhlnmdodohhgpaalhglnjchakfb';
 const PRIVACY_URL = 'https://github.com/sapn95/linkward/blob/main/PRIVACY.md';
@@ -27,7 +27,7 @@ const JUSTIFICATION = {
 Only the URL and tab id of the navigation are read, and only for tabs the user has just opened from outside the browser. Nothing is recorded, nothing is transmitted, and no page content is accessed. The permission is optional: it is requested at runtime when the user switches the feature on, and handed back with permissions.remove when they switch it off.`,
 };
 
-const { browser, page } = await dashboard(ITEM);
+const page = await dashboard(ITEM);
 // The publisher id is part of the path and differs per account, so it is taken
 // from the tab that is already on the right item rather than hard-coded.
 await page.goto(page.url().replace(/\/edit(\/.*)?$/, '/edit/privacy'), {
@@ -37,9 +37,7 @@ await page.waitForTimeout(3500);
 const step = (m) => console.log(`· ${m}`);
 
 const areas = page.locator('textarea');
-const labels = await areas.evaluateAll((els) =>
-  els.map((el) => (el.getAttribute('aria-label') ?? '').replace(/\s+/g, ' ')),
-);
+const labels = await labelsOf(areas);
 
 step('single purpose');
 await areas.nth(0).fill(SINGLE_PURPOSE);
@@ -60,10 +58,19 @@ for (const [i, label] of labels.entries()) {
 }
 
 step('remote code: no');
-await page
-  .getByText(/^Nein, ich verwende/)
-  .first()
-  .click();
+// By value, not by its text. "Nein, ich verwende…" is also how the whole radio
+// group's text begins, so getByText matched the group and the click landed on
+// "Ja" — the opposite answer, saved, and only caught because the store then
+// demanded a justification for remote code linkward does not use.
+// The control is a plain yes/no: value="false" is no.
+const noRemoteCode = page.locator('input[type=radio][value="false"]').first();
+await noRemoteCode.click({ force: true });
+if (!(await noRemoteCode.isChecked())) {
+  // The input is visually hidden behind Material's own markup; the row that
+  // carries the label is three levels up.
+  await noRemoteCode.locator('xpath=ancestor::div[3]').click();
+}
+if (!(await noRemoteCode.isChecked())) throw new Error('Could not answer "no" to remote code');
 
 // The three disclosures are the only checkboxes that talk about user data as
 // such; the ones above them are the categories of data collected, and linkward
@@ -76,10 +83,22 @@ for (const box of await page.getByRole('checkbox').all()) {
 }
 
 step('privacy policy URL');
+// By role, not by label: the same words also name the "learn more" link that
+// sits beside the box, and a link is the first of the two in the DOM.
 await page
-  .getByLabel(/Datenschutzerklärung/)
+  .getByRole('textbox', { name: /Datenschutzerklärung/ })
   .first()
   .fill(PRIVACY_URL);
+
+// Read the form back before saving. The first run of this script reported five
+// tidy steps and left both justification boxes empty, because it looked for the
+// labels in the wrong attribute — a form filler that cannot fail loudly is
+// worse than no form filler.
+const written = await areas.evaluateAll((els) => els.map((el) => el.value.length));
+for (const [i, label] of labels.entries()) {
+  if (/für \S+/.test(label) && !written[i]) throw new Error(`Left empty: ${label}`);
+}
+if (!written[0]) throw new Error('Left empty: single purpose');
 
 step('save');
 await page.getByRole('button', { name: 'Speichern' }).first().click();
@@ -87,4 +106,3 @@ await page.waitForTimeout(5000);
 
 await page.screenshot({ path: '/tmp/cws-after-privacy.png', fullPage: true });
 console.log('done —', page.url());
-await browser.close();

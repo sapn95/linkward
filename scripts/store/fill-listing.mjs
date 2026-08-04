@@ -12,7 +12,7 @@ import { dashboard } from './dashboard.mjs';
 const ITEM = 'pbegofhlnmdodohhgpaalhglnjchakfb';
 const DESCRIPTION = readFileSync(new URL('./listing.txt', import.meta.url), 'utf8').trim();
 
-const { browser, page } = await dashboard(ITEM);
+const page = await dashboard(ITEM);
 const step = (m) => console.log(`· ${m}`);
 
 /**
@@ -68,4 +68,3 @@ await page.waitForTimeout(5000);
 
 await page.screenshot({ path: '/tmp/cws-after-listing.png', fullPage: true });
 console.log('done —', page.url());
-await browser.close();
