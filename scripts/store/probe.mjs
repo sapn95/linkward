@@ -4,7 +4,7 @@
 // app whose ids change, so the selectors are found, not guessed.
 import { dashboard } from './dashboard.mjs';
 
-const { browser, page } = await dashboard();
+const page = await dashboard();
 
 const url = process.argv[2];
 if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -44,4 +44,3 @@ const fields = await page.evaluate(() => {
 console.log(JSON.stringify(fields, null, 1));
 
 await page.screenshot({ path: '/tmp/cws-now.png' });
-await browser.close();
