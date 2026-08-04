@@ -62,11 +62,17 @@ a form in a language you did not choose". `scripts/store/` drives the real
 dashboard instead:
 
 ```sh
-node scripts/store/session.mjs      # opens your Chrome, keeps a debug port open
-node scripts/store/probe.mjs [url]  # says which fields are on the page, and what they are called
-node scripts/store/fill-listing.mjs # description, category, language, icon, screenshot, links
-node scripts/store/fill-privacy.mjs # single purpose, permission justifications, disclosures
+node scripts/store/session.mjs       # opens your Chrome, keeps a debug port open
+node scripts/store/probe.mjs [url]   # says which fields are on the page, and what they are called
+node scripts/store/fill-listing.mjs  # Chrome: description, category, language, icon, screenshot, links
+node scripts/store/fill-privacy.mjs  # Chrome: single purpose, permission justifications, disclosures
+node scripts/store/submit.mjs        # Chrome: submit for review (dry run without --confirm)
+node scripts/store/amo-listing.mjs   # Firefox: description, icon, screenshot, links
 ```
+
+Both stores are driven from the one Chrome window — AMO's dev hub is an
+ordinary website, and signing in to it there is no different from anywhere
+else.
 
 `session.mjs` starts your **installed Chrome** — not a downloaded Chromium,
 because Google's sign-in refuses builds it does not recognise — with a profile
@@ -76,9 +82,11 @@ generates its element ids per render: nothing is selected by id, only by the
 text a person would read, and that text depends on the language your Google
 account is in.
 
-The prose lives beside the scripts (`scripts/store/listing.txt`,
+The prose lives beside the scripts (`listing-chrome.txt`, `listing-firefox.txt`,
 `fill-privacy.mjs`), so a wording change is a diff and a review, not a memory of
-what was typed into a text box eight months ago.
+what was typed into a text box eight months ago. The two descriptions differ
+because the two builds do: only one of them has containers, and only one can
+stop a request before it is sent.
 
 **Chrome Web Store** → <https://chrome.google.com/webstore/devconsole>
 
@@ -99,8 +107,17 @@ what was typed into a text box eight months ago.
 
 **Firefox AMO** → <https://addons.mozilla.org/developers/>
 
-- The **first upload creates the listing**. Run the release workflow once, then
-  fill in the summary, category and privacy policy on the page it made.
+- The **first upload creates the add-on**, but only if the release carries the
+  two fields AMO will not take from the manifest. They live in
+  `docs/store/amo-metadata.json`, and AMO reports them one per attempt:
+
+  | Missing           | What it says                                                    |
+  | ----------------- | --------------------------------------------------------------- |
+  | `version.license` | This field, or custom_license, is required for listed versions. |
+  | `categories`      | This field is required for add-ons with listed versions.        |
+
+- Everything else — description, icon, screenshot, links — is
+  `scripts/store/amo-listing.mjs`.
 
 ## Releasing
 

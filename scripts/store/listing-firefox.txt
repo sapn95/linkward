@@ -1,0 +1,17 @@
+linkward asks where a link should open, before it opens.
+
+Click a link in Slack, Outlook, a PDF or the terminal and Firefox opens it wherever it happens to land — usually in no container at all. By the time you notice, the page has loaded and the wrong session has already seen it.
+
+linkward stops the request before it is sent, and asks:
+
+• Open it in a container. Yours are listed, and the one you used last is offered first.
+• Open it without a container.
+• Copy the link and open nothing. Sometimes the answer is "not now", or "not in this account".
+• Close the tab and forget it.
+• Tick "remember this host" and it stops asking for that site.
+
+Nothing is fetched until you have chosen. That is the part Firefox can do and Chrome cannot: the navigation is held in webRequest.onBeforeRequest, so the server never hears about the link until you have said where it should go. The Chrome build of linkward can only redirect the tab a moment after it has started, and has no containers to offer at all.
+
+linkward reads no page content, has no server behind it, and sends nothing anywhere. Its settings live in your browser. The permission it needs to watch navigations is asked for only when you switch the feature on, and handed straight back when you switch it off.
+
+Open source, MIT licensed: https://github.com/sapn95/linkward

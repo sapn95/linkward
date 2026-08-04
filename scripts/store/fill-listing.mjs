@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dashboard } from './dashboard.mjs';
 
 const ITEM = 'pbegofhlnmdodohhgpaalhglnjchakfb';
-const DESCRIPTION = readFileSync(new URL('./listing.txt', import.meta.url), 'utf8').trim();
+const DESCRIPTION = readFileSync(new URL('./listing-chrome.txt', import.meta.url), 'utf8').trim();
 
 const page = await dashboard(ITEM);
 const step = (m) => console.log(`· ${m}`);
