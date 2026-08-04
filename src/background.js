@@ -97,7 +97,16 @@ async function arm() {
   await armChrome();
 }
 
-chrome.runtime.onInstalled.addListener(arm);
+chrome.runtime.onInstalled.addListener(async (details) => {
+  await arm();
+  // Everything here needs a permission the browser will only grant on a click,
+  // so a fresh install does nothing at all until someone finds the options page
+  // and switches it on. Nobody goes looking for a settings page for an
+  // extension that has never done anything: the first impression is a link
+  // opening exactly as it always did, which reads as broken. So open the page
+  // once, on install, and let it explain itself.
+  if (details?.reason === 'install') chrome.runtime.openOptionsPage();
+});
 chrome.runtime.onStartup.addListener(arm);
 chrome.permissions.onAdded.addListener(arm);
 chrome.storage.onChanged.addListener(arm);

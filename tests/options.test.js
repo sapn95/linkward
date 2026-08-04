@@ -66,6 +66,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('the first-run notice', () => {
+  it('is shown while the browser grants nothing', async () => {
+    // Without it a new install is indistinguishable from a broken one: links
+    // keep opening exactly as they did, and nothing says why.
+    await mount({ granted: false });
+    expect($('setup').hidden).toBe(false);
+    expect($('setup').textContent).toMatch(/not watching anything yet/i);
+  });
+
+  it('is gone once the access is really held', async () => {
+    await mount({ granted: true, settings: { enabled: true } });
+    expect($('setup').hidden).toBe(true);
+  });
+
+  it('goes away the moment the access is granted, without a reload', async () => {
+    await mount({ granted: false });
+    $('enabled').checked = true;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('setup').hidden).toBe(true);
+  });
+
+  it('comes back when the access is refused', async () => {
+    await mount({ grant: false });
+    $('enabled').checked = true;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('setup').hidden).toBe(false);
+  });
+});
+
 describe('the switch tells the truth', () => {
   it('is off when the browser holds nothing, whatever was stored', async () => {
     // The access can be revoked in the browser's own add-on settings behind our

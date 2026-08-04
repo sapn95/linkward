@@ -64,7 +64,7 @@ nothing anywhere. See [PRIVACY.md](PRIVACY.md).
 
 ## Install
 
-Not published yet.
+In review at both stores.
 
 ```bash
 npm install
@@ -75,6 +75,12 @@ npm run build           # dist/
 Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
 `dist-firefox/manifest.json`.
 Chrome: `chrome://extensions` → **Developer mode** → **Load unpacked** → `dist/`.
+
+**Then switch it on.** linkward opens its settings page by itself the first
+time, and it does nothing at all until the switch there is on: the access it
+needs is asked for at that moment, not at install, and a browser only grants it
+on a click. Before that, links open exactly as they always did — which looks
+identical to a broken install, so the page says so in as many words.
 
 ## Development
 

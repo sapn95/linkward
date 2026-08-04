@@ -14,6 +14,14 @@
         before it opens — or copies it and opens nothing.
       </p>
 
+      <!-- Shown until the browser actually grants the access. Without it a new
+           install is indistinguishable from a broken one: links keep opening
+           exactly as they did, and nothing anywhere says why. -->
+      <p id="setup" class="setup" hidden>
+        <strong>linkward is not watching anything yet.</strong> Switch it on below and allow the
+        access Firefox asks for. Until then every link opens as it always did.
+      </p>
+
       <label class="check">
         <input id="enabled" type="checkbox" />
         Ask before opening links from other applications

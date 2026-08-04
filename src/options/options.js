@@ -17,6 +17,7 @@ async function init() {
   // permission can be handed back in the browser's own add-on settings behind
   // our back, and a tick that lied about that would be worse than no tick.
   $('enabled').checked = Boolean(settings.enabled) && (await hasWatchPermissions());
+  showSetupNotice();
 
   $('enabled').addEventListener('change', onToggle);
   $('remember').addEventListener('change', save);
@@ -36,13 +37,20 @@ async function onToggle(e) {
     const granted = await requestWatchPermissions();
     if (!granted) {
       e.target.checked = false;
+      showSetupNotice();
       say('Access denied — linkward cannot watch anything, so it stays off.');
       return;
     }
   } else {
     await dropWatchPermissions();
   }
+  showSetupNotice();
   await save();
+}
+
+/** Tied to the tick, which is itself tied to what the browser really grants. */
+function showSetupNotice() {
+  $('setup').hidden = $('enabled').checked;
 }
 
 async function save() {
