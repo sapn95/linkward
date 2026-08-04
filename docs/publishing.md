@@ -19,18 +19,32 @@ have.
 | `AMO_JWT_ISSUER`       | <https://addons.mozilla.org/developers/addon/api/key/>       |
 | `AMO_JWT_SECRET`       | the same page                                                |
 
-Then:
+### The item itself has to be made by hand, once
+
+**The Chrome Web Store API cannot create an item.** It has `upload`, `publish`,
+`fetchStatus`, `cancelSubmission` and `setPublishedDeployPercentage`, and no
+create — and the documentation is explicit that "before you can publish a new
+item, you have to fill out the Store listing and Privacy tabs in the Developer
+Dashboard". Trying anyway answers `400 Invalid Value`, which reads like a
+problem with the zip and is not.
+
+So: `npm run build -- --zip`, then **New item** in the
+[dashboard](https://chrome.google.com/webstore/devconsole) and upload
+`linkward-v*.zip`. The 32-letter id in the URL afterwards is
+`CHROME_EXTENSION_ID`.
+
+### Then, once
 
 ```bash
-npm run build -- --zip
 CHROME_CLIENT_ID=… CHROME_CLIENT_SECRET=… CHROME_REFRESH_TOKEN=… \
-AMO_JWT_ISSUER=… AMO_JWT_SECRET=… \
+CHROME_EXTENSION_ID=… AMO_JWT_ISSUER=… AMO_JWT_SECRET=… \
 node scripts/setup-stores.mjs
 ```
 
-It creates the Chrome Web Store item over the API — a POST with no item id is
-what makes a new one — and writes all six secrets into the repository. Nothing
-is echoed.
+It checks the Google credentials really work and that the item is reachable
+with them, then writes every secret into the repository. Nothing is echoed. The
+AMO pair is optional — the two stores are independent, and a missing Mozilla key
+should not hold up the Chrome half.
 
 > **A refresh token is bound to the client that minted it.** Always take all
 > three Chrome values from the SAME downloaded `client_secret_*.json`. A fresh
