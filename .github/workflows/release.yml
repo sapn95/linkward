@@ -468,11 +468,12 @@ jobs:
           # approval: --approval-timeout=0 submits the version and returns without
           # waiting (otherwise web-ext times out after 15 min and reds the release).
           #
-          # --amo-metadata carries the one field AMO will not take from the
-          # manifest: a listed version must name its licence, and the first
-          # submission is rejected outright without it
-          # ("This field, or custom_license, is required for listed versions").
-          # web-ext merges the file's `version` key into the version it posts.
+          # --amo-metadata carries the two things AMO will not take from the
+          # manifest, and rejects the submission outright for missing: the
+          # licence of a listed version, and the add-on's categories. It reports
+          # them one at a time, so the file grew a field per failed run.
+          # web-ext merges the file's `version` key into the version it posts
+          # and the rest into the add-on itself.
           if ! out="$(npx --yes web-ext@10 sign \
             --channel=listed \
             --source-dir=dist-firefox \
