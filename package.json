@@ -19,7 +19,8 @@
     "build": "node scripts/build.mjs",
     "build:firefox": "node scripts/build.mjs --firefox",
     "package": "node scripts/build.mjs --zip && node scripts/build.mjs --firefox --zip",
-    "ci": "npm run lint && npm run format:check && npm run test:coverage && npm run package"
+    "ci": "npm run lint && npm run format:check && npm run test:coverage && npm run package",
+    "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
