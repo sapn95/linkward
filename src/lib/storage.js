@@ -116,10 +116,19 @@ export async function getRules() {
 }
 
 export async function setRules(rules) {
-  const s = sync();
-  if (!s) return {};
   const clean = readRules(rules);
-  await s.set({ [RULES_KEY]: clean });
+  const s = sync();
+  const l = local();
+  if (!s && !l) {
+    // Resolving quietly here is how a page ends up saying "example.com now
+    // opens in Work" over storage that was never touched.
+    throw new Error('No extension storage available.');
+  }
+  if (s) await s.set({ [RULES_KEY]: clean });
+  // The read falls back to local for rules an older version left there. Writing
+  // only to sync would leave those in place under a newer copy, so a legacy
+  // rule that was just deleted comes back the next time sync is empty.
+  if (l) await l.set({ [RULES_KEY]: s ? {} : clean });
   return clean;
 }
 

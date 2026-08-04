@@ -48,9 +48,14 @@ async function fire(url) {
   if (os === 'darwin') {
     await run('open', browser ? ['-a', browser, url] : [url]);
   } else if (os === 'win32') {
-    await run('cmd', ['/c', 'start', '', url]);
+    // The empty string is start's window TITLE, not a stray argument: without
+    // it, start reads a quoted URL as the title and opens nothing.
+    await run('cmd', browser ? ['/c', 'start', '', browser, url] : ['/c', 'start', '', url], {
+      windowsVerbatimArguments: true,
+    });
   } else {
-    await run('xdg-open', [url]);
+    // xdg-open cannot be told which browser to use, so name the command itself.
+    await run(browser ?? 'xdg-open', [url]);
   }
 }
 

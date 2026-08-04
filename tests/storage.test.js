@@ -76,7 +76,7 @@ describe('remembered per-host choices', () => {
 
     delete globalThis.chrome;
     await expect(getRules()).resolves.toEqual({});
-    await expect(setRule('x', { container: 'y' })).resolves.toEqual({});
+    await expect(setRule('x', { container: 'y' })).rejects.toThrow(/no extension storage/i);
   });
 
   it('ignores a rules blob that is not an object', async () => {

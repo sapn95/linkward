@@ -54,8 +54,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
  *   {open: ''}      …and their answer was "with no container", so let it run
  */
 async function decide(details) {
-  const settings = await getSettings();
-  if (!settings.enabled) return null;
+  // Storage can reject. Unhandled, that becomes a rejected promise returned
+  // straight to a BLOCKING webRequest listener — the one place in this
+  // extension where a thrown error is holding up somebody's page.
+  const settings = await getSettings().catch(() => null);
+  if (!settings?.enabled) return null;
   const ask = shouldAsk(details, {
     candidateSince: (id) => candidates.get(id),
     isExcluded: (url) => matchesAny(url, settings.neverAsk),
@@ -87,6 +90,10 @@ async function rememberedFor(url) {
   const rules = await getRules().catch(() => ({}));
   const rule = rules[host];
   if (!rule) return undefined;
+  // Before the query, not after: a plain rule needs no containers, and this
+  // runs inside a blocking handler holding up a request that is about to be
+  // released untouched anyway.
+  if (rule.plain) return '';
   return resolveRule(rule, await listContainers());
 }
 

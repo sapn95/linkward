@@ -196,6 +196,11 @@ async function importSettings(e) {
   try {
     const incoming = fromTransfer(JSON.parse(await file.text()));
     const settings = await getSettings().catch(() => DEFAULT_SETTINGS);
+    // An import REPLACES the remembered sites; it does not merge. Reporting
+    // only what arrived would leave somebody with fewer rules than they had
+    // and no hint that anything went.
+    const before = Object.keys(await getRules().catch(() => ({})));
+    const dropped = before.filter((h) => !(h in incoming.rules)).length;
     // `enabled` is never imported: it stands for a permission the browser only
     // grants on a click, and a file cannot click.
     await saveSettings({ ...settings, ...incoming.settings });
@@ -203,7 +208,12 @@ async function importSettings(e) {
     $('remember').checked = incoming.settings.rememberChoices;
     $('never').value = incoming.settings.neverAsk.join('\n');
     await renderRules();
-    say(`Imported ${Object.keys(incoming.rules).length} remembered site(s).`);
+    const kept = Object.keys(incoming.rules).length;
+    say(
+      dropped
+        ? `Imported ${kept} remembered site(s), replacing ${before.length} — ${dropped} no longer remembered.`
+        : `Imported ${kept} remembered site(s).`,
+    );
   } catch (err) {
     say(`Could not import that file: ${err?.message || err}`);
   }

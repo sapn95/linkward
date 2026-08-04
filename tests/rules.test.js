@@ -78,7 +78,16 @@ describe('what gets stored', () => {
   it('keeps rules where the browser account can sync them', async () => {
     await setRule('Example.COM', { container: 'Work', cookieStoreId: WORK.cookieStoreId });
     expect(chrome.storage.sync.store.rules).toBeTruthy();
-    expect(chrome.storage.local.store.rules).toBeUndefined();
+    // And clears the local copy an older version may have left, so a rule
+    // deleted here cannot come back the next time sync reads empty.
+    expect(chrome.storage.local.store.rules).toEqual({});
+  });
+
+  it('refuses rather than pretending, when there is nowhere to write', async () => {
+    // Resolving quietly is how the settings page ends up announcing a change
+    // over storage that was never touched.
+    delete globalThis.chrome;
+    await expect(setRule('a.test', { container: 'Work' })).rejects.toThrow(/no extension storage/i);
   });
 
   it('lower-cases the host, because a host is not case sensitive', async () => {

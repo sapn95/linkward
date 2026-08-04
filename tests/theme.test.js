@@ -14,8 +14,19 @@ const CSS = readFileSync(join(process.cwd(), 'src/pick/pick.css'), 'utf8');
 const OPTIONS = readFileSync(join(process.cwd(), 'src/options/options.html'), 'utf8');
 const PICK = readFileSync(join(process.cwd(), 'src/pick/pick.html'), 'utf8');
 
-/** The declarations inside `@media (prefers-color-scheme: dark)`. */
-const dark = CSS.slice(CSS.indexOf('prefers-color-scheme: dark'));
+/**
+ * The declarations inside `@media (prefers-color-scheme: dark)` — and only
+ * those. Slicing to the end of the file instead would let a variable declared
+ * in some unrelated rule below satisfy the assertion, and the test would stop
+ * proving that the dark palette restates each one.
+ */
+const dark = (() => {
+  const at = CSS.indexOf('prefers-color-scheme: dark');
+  if (at < 0) throw new Error('No dark-mode block in pick.css at all.');
+  const close = CSS.indexOf('\n}', CSS.indexOf('{', at));
+  if (close < 0) throw new Error('Could not find the end of the dark-mode block.');
+  return CSS.slice(at, close);
+})();
 
 describe('the browser is told which scheme the page is in', () => {
   it('declares color-scheme, so native controls follow', () => {
