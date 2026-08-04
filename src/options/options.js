@@ -1,13 +1,25 @@
-import { getSettings, saveSettings } from '../lib/storage.js';
+import {
+  getSettings,
+  saveSettings,
+  getRules,
+  setRules,
+  removeRule,
+  DEFAULT_SETTINGS,
+} from '../lib/storage.js';
 import {
   hasWatchPermissions,
   requestWatchPermissions,
   dropWatchPermissions,
   isFirefox,
+  listContainers,
+  containerColor,
 } from '../lib/containers.js';
+import { toTransfer, fromTransfer, fileName } from '../lib/transfer.js';
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
+
+let containersHere = [];
 
 async function init() {
   const settings = await getSettings().catch(() => ({}));
@@ -22,6 +34,12 @@ async function init() {
   $('enabled').addEventListener('change', onToggle);
   $('remember').addEventListener('change', save);
   $('never').addEventListener('change', save);
+  $('export').addEventListener('click', exportSettings);
+  $('import').addEventListener('click', () => $('import-file').click());
+  $('import-file').addEventListener('change', importSettings);
+
+  containersHere = await listContainers();
+  await renderRules();
 
   $('honest').textContent = isFirefox()
     ? 'Firefox lets linkward stop the request before it is sent, so the page is never fetched.'
@@ -51,6 +69,144 @@ async function onToggle(e) {
 /** Tied to the tick, which is itself tied to what the browser really grants. */
 function showSetupNotice() {
   $('setup').hidden = $('enabled').checked;
+}
+
+// --- Remembered sites ------------------------------------------------------
+
+async function renderRules() {
+  const rules = await getRules().catch(() => ({}));
+  const hosts = Object.keys(rules).sort();
+  const list = $('rules');
+  list.replaceChildren();
+  $('rules-empty').hidden = hosts.length > 0;
+  for (const host of hosts) list.append(ruleRow(host, rules[host]));
+}
+
+function ruleRow(host, rule) {
+  const li = document.createElement('li');
+
+  const name = document.createElement('span');
+  name.className = 'host';
+  // textContent, never innerHTML: a host comes off a page the user visited.
+  name.textContent = host;
+
+  const where = document.createElement('select');
+  where.setAttribute('aria-label', `Where ${host} opens`);
+  where.append(new Option('No container', ''));
+  for (const c of containersHere) {
+    const option = new Option(c.name, c.cookieStoreId);
+    where.append(option);
+  }
+  // A rule made on another machine names a container this one may not have.
+  // Showing it as "No container" would be a lie, so it is offered as itself and
+  // marked, and leaving the row alone leaves the rule alone.
+  const known = containersHere.find((c) => c.name === rule.container);
+  if (rule.plain || (!rule.container && !rule.cookieStoreId)) {
+    where.value = '';
+  } else if (known) {
+    where.value = known.cookieStoreId;
+  } else {
+    const missing = new Option(
+      `${rule.container ?? 'Unknown container'} (not here)`,
+      '__missing__',
+    );
+    where.append(missing);
+    where.value = '__missing__';
+  }
+  where.addEventListener('change', () => changeRule(host, where.value));
+
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  const colour = containerColor(containersHere.find((c) => c.name === rule.container)?.color);
+  if (colour) dot.style.background = colour;
+
+  const drop = document.createElement('button');
+  drop.type = 'button';
+  drop.className = 'quiet';
+  drop.textContent = 'Forget';
+  drop.setAttribute('aria-label', `Forget ${host}`);
+  drop.addEventListener('click', async () => {
+    try {
+      await removeRule(host);
+      await renderRules();
+      say(`Will ask about ${host} again.`);
+    } catch (err) {
+      say(`Could not forget ${host}: ${err?.message || err}`);
+    }
+  });
+
+  li.append(dot, name, where, drop);
+  return li;
+}
+
+async function changeRule(host, value) {
+  // The placeholder for a container this browser does not have. Selecting it is
+  // not a change, so nothing is written.
+  if (value === '__missing__') return;
+  const chosen = containersHere.find((c) => c.cookieStoreId === value);
+  const rules = await getRules().catch(() => ({}));
+  rules[host] = chosen
+    ? { container: chosen.name, cookieStoreId: chosen.cookieStoreId }
+    : { container: null, cookieStoreId: '', plain: true };
+  try {
+    // Synced storage has a size limit and can refuse. Silently keeping the new
+    // value on screen while the old one is what actually applies is the worst
+    // possible outcome for a page about where your sessions open.
+    await setRules(rules);
+    await renderRules();
+    say(`${host} now opens in ${chosen ? chosen.name : 'no container'}.`);
+  } catch (err) {
+    await renderRules();
+    say(`Could not save that: ${err?.message || err}`);
+  }
+}
+
+// --- The settings file -----------------------------------------------------
+
+async function exportSettings() {
+  const [settings, rules] = await Promise.all([
+    getSettings().catch(() => ({})),
+    getRules().catch(() => ({})),
+  ]);
+  const blob = new Blob([`${JSON.stringify(toTransfer(settings, rules), null, 2)}\n`], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName(Date.now());
+  // In the document, and revoked a tick later: Firefox will not follow a
+  // download from an anchor that was never in the page, and revoking in the
+  // same turn as the click has been known to cancel the download it started.
+  a.hidden = true;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+  say(`Exported ${Object.keys(rules).length} remembered site(s).`);
+}
+
+async function importSettings(e) {
+  const file = e.target.files?.[0];
+  // Cleared straight away, so choosing the same file twice in a row still fires.
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const incoming = fromTransfer(JSON.parse(await file.text()));
+    const settings = await getSettings().catch(() => DEFAULT_SETTINGS);
+    // `enabled` is never imported: it stands for a permission the browser only
+    // grants on a click, and a file cannot click.
+    await saveSettings({ ...settings, ...incoming.settings });
+    await setRules(incoming.rules);
+    $('remember').checked = incoming.settings.rememberChoices;
+    $('never').value = incoming.settings.neverAsk.join('\n');
+    await renderRules();
+    say(`Imported ${Object.keys(incoming.rules).length} remembered site(s).`);
+  } catch (err) {
+    say(`Could not import that file: ${err?.message || err}`);
+  }
 }
 
 async function save() {

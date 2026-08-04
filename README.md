@@ -13,6 +13,13 @@ identity. linkward stops it first and asks:
 On Firefox the request is stopped **before it is sent**, so the page is never
 fetched, no cookie is set, and no session is started in the wrong container.
 
+Answer once for a host and tick **remember**, and it stops asking about that
+one. Those live in the settings page, where you can move a host to another
+container or drop it to be asked again — and they follow your browser account,
+because they are stored by the container's **name**, not by the id the browser
+minted for it on one machine. A rule for a container this browser does not have
+is never guessed at: it asks.
+
 ## The honest part, up front
 
 **Firefox does not tell an extension that a link came from another
@@ -81,6 +88,19 @@ time, and it does nothing at all until the switch there is on: the access it
 needs is asked for at that moment, not at install, and a browser only grants it
 on a click. Before that, links open exactly as they always did — which looks
 identical to a broken install, so the page says so in as many words.
+
+## Seeing it work
+
+A link clicked on a page is deliberately never intercepted, so demonstrating
+this from inside the browser demonstrates nothing. The script hands links to the
+operating system instead, the way a mail client does:
+
+```bash
+node scripts/demo.mjs                    # one link
+node scripts/demo.mjs --all              # the tour, one at a time
+node scripts/demo.mjs --browser=Firefox  # ignore the default browser
+node scripts/demo.mjs https://your.intranet/page
+```
 
 ## Development
 
