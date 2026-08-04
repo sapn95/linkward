@@ -436,3 +436,61 @@ describe('the two failures that leave somebody with the wrong window', () => {
     expect(await ask(c, { tabId: 9 })).toEqual({});
   });
 });
+
+describe('opening in a remembered container, when it goes wrong', () => {
+  const WORK = 'firefox-container-2';
+
+  async function pinned(create) {
+    const c = await boot({ settings: { enabled: true } });
+    c.storage.sync.store.rules = { 'example.com': { container: 'Work', cookieStoreId: WORK } };
+    globalThis.browser = {
+      contextualIdentities: { query: async () => [{ cookieStoreId: WORK, name: 'Work' }] },
+    };
+    c.tabs.create = create;
+    return c;
+  }
+
+  it('falls back to the picker when the container went in the meantime', async () => {
+    // Deleted between resolving the rule and acting on it. The original request
+    // is already cancelled, so doing nothing leaves a blank tab and no reason.
+    const c = await pinned(
+      vi.fn(async () => {
+        throw new Error('No cookie store exists with ID firefox-container-2');
+      }),
+    );
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({ cancel: true });
+    await settle(20);
+    expect(c.tabs.update).toHaveBeenCalledWith(7, {
+      url: expect.stringContaining('pick/pick.html'),
+    });
+  });
+
+  it('claims the new tab even when it appears before create has returned', async () => {
+    // The ordinary case in Firefox: onCreated fires first. Without the claim
+    // staked up front, the tab is flagged a candidate and linkward asks about
+    // the answer it just gave.
+    const c = await pinned(
+      vi.fn(async () => {
+        await c.tabs.onCreated.emit({ id: 42 });
+        return { id: 42 };
+      }),
+    );
+    await c.tabs.onCreated.emit({ id: 7 });
+    await ask(c, {});
+    await settle(20);
+    expect(await ask(c, { tabId: 42 })).toEqual({});
+  });
+
+  it('does not let a spent claim swallow the next external link', async () => {
+    // The claim is dropped once the id is known. Left standing, the very next
+    // tab from another application would be taken for one of ours.
+    const c = await pinned(vi.fn(async () => ({ id: 42 })));
+    await c.tabs.onCreated.emit({ id: 7 });
+    await ask(c, {});
+    await settle(20);
+    await c.tabs.onCreated.emit({ id: 99 });
+    const answer = await ask(c, { tabId: 99, url: 'https://elsewhere.example/' });
+    expect(answer.redirectUrl).toContain('pick/pick.html');
+  });
+});
