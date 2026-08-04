@@ -6,20 +6,13 @@
 // typed by a human or typed by this. The dashboard is an Angular app whose
 // element ids are generated per render, so nothing is selected by id — only by
 // the text a person would read, and the file inputs by the slot they sit in.
-import { chromium } from 'playwright-core';
 import { readFileSync } from 'node:fs';
+import { dashboard } from './dashboard.mjs';
 
 const ITEM = 'pbegofhlnmdodohhgpaalhglnjchakfb';
 const DESCRIPTION = readFileSync(new URL('./listing.txt', import.meta.url), 'utf8').trim();
 
-const browser = await chromium.connectOverCDP('http://localhost:9222');
-const page = browser
-  .contexts()[0]
-  .pages()
-  .find((p) => p.url().includes('devconsole'));
-if (!page) throw new Error('No dashboard tab open. Run scripts/store/session.mjs first.');
-
-if (!page.url().includes(ITEM)) throw new Error(`Wrong item open: ${page.url()}`);
+const { browser, page } = await dashboard(ITEM);
 const step = (m) => console.log(`· ${m}`);
 
 /**

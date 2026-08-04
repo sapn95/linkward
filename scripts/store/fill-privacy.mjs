@@ -9,7 +9,7 @@
 // Field names come from the account's own language (German here), so the
 // selectors match on the part that is stable across languages: the permission
 // name itself.
-import { chromium } from 'playwright-core';
+import { dashboard } from './dashboard.mjs';
 
 const ITEM = 'pbegofhlnmdodohhgpaalhglnjchakfb';
 const PRIVACY_URL = 'https://github.com/sapn95/linkward/blob/main/PRIVACY.md';
@@ -27,14 +27,7 @@ const JUSTIFICATION = {
 Only the URL and tab id of the navigation are read, and only for tabs the user has just opened from outside the browser. Nothing is recorded, nothing is transmitted, and no page content is accessed. The permission is optional: it is requested at runtime when the user switches the feature on, and handed back with permissions.remove when they switch it off.`,
 };
 
-const browser = await chromium.connectOverCDP('http://localhost:9222');
-const page = browser
-  .contexts()[0]
-  .pages()
-  .find((p) => p.url().includes('devconsole'));
-if (!page) throw new Error('No dashboard tab open. Run scripts/store/session.mjs first.');
-
-if (!page.url().includes(ITEM)) throw new Error(`Wrong item open: ${page.url()}`);
+const { browser, page } = await dashboard(ITEM);
 // The publisher id is part of the path and differs per account, so it is taken
 // from the tab that is already on the right item rather than hard-coded.
 await page.goto(page.url().replace(/\/edit(\/.*)?$/, '/edit/privacy'), {

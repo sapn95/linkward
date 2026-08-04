@@ -2,11 +2,9 @@
 // heading, and every form control it can see with the label a human would read.
 // This is the step that makes the rest possible — the dashboard is an Angular
 // app whose ids change, so the selectors are found, not guessed.
-import { chromium } from 'playwright-core';
+import { dashboard } from './dashboard.mjs';
 
-const browser = await chromium.connectOverCDP('http://localhost:9222');
-const ctx = browser.contexts()[0];
-const page = ctx.pages().find((p) => p.url().includes('chrome.google.com')) ?? ctx.pages()[0];
+const { browser, page } = await dashboard();
 
 const url = process.argv[2];
 if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
