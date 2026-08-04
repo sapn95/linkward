@@ -57,7 +57,28 @@ should not hold up the Chrome half.
 ## What only a human can do
 
 Neither store has an API for these. That is deliberate: they are legal
-statements by the publisher.
+statements by the publisher — but "no API" does not have to mean "click through
+a form in a language you did not choose". `scripts/store/` drives the real
+dashboard instead:
+
+```sh
+node scripts/store/session.mjs      # opens your Chrome, keeps a debug port open
+node scripts/store/probe.mjs [url]  # says which fields are on the page, and what they are called
+node scripts/store/fill-listing.mjs # description, category, language, icon, screenshot, links
+node scripts/store/fill-privacy.mjs # single purpose, permission justifications, disclosures
+```
+
+`session.mjs` starts your **installed Chrome** — not a downloaded Chromium,
+because Google's sign-in refuses builds it does not recognise — with a profile
+under `~/.cache/`, so you sign in once by hand and it sticks. Every other script
+attaches to that same window over CDP. `probe.mjs` exists because the dashboard
+generates its element ids per render: nothing is selected by id, only by the
+text a person would read, and that text depends on the language your Google
+account is in.
+
+The prose lives beside the scripts (`scripts/store/listing.txt`,
+`fill-privacy.mjs`), so a wording change is a diff and a review, not a memory of
+what was typed into a text box eight months ago.
 
 **Chrome Web Store** → <https://chrome.google.com/webstore/devconsole>
 

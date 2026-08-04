@@ -467,11 +467,18 @@ jobs:
           # A listed add-on is reviewed by Mozilla (hours–days), so don't block on
           # approval: --approval-timeout=0 submits the version and returns without
           # waiting (otherwise web-ext times out after 15 min and reds the release).
+          #
+          # --amo-metadata carries the one field AMO will not take from the
+          # manifest: a listed version must name its licence, and the first
+          # submission is rejected outright without it
+          # ("This field, or custom_license, is required for listed versions").
+          # web-ext merges the file's `version` key into the version it posts.
           if ! out="$(npx --yes web-ext@10 sign \
             --channel=listed \
             --source-dir=dist-firefox \
             --api-key="$AMO_JWT_ISSUER" \
             --api-secret="$AMO_JWT_SECRET" \
+            --amo-metadata=docs/store/amo-metadata.json \
             --approval-timeout=0 2>&1)"; then
             echo "$out"
             # Only "it is uploaded and queued for review" is benign. Bad credentials,

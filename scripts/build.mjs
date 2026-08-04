@@ -38,6 +38,10 @@ if (firefox) {
       data_collection_permissions: { required: ['none'] },
     },
   };
+  // Firefox holds the request itself, so it never reaches for webNavigation.
+  manifest.optional_permissions = manifest.optional_permissions.filter(
+    (p) => p !== 'webNavigation',
+  );
 } else {
   // Containers are a Firefox feature. Shipping the permission to Chrome would
   // be an unknown string in the manifest and an unexplainable line in the store
@@ -45,10 +49,16 @@ if (firefox) {
   manifest.permissions = manifest.permissions.filter(
     (p) => p !== 'contextualIdentities' && p !== 'cookies',
   );
-  // Chrome MV3 has no blocking webRequest. The Chrome build asks AFTER the
-  // navigation starts rather than before it — see docs/architecture.md.
+  // The Web Store shows this verbatim as the item's summary, so it must not
+  // promise a container picker to a browser that has no containers.
+  manifest.description =
+    'Asks where a link should open, before it opens. Or copies the URL and opens nothing.';
+  // Chrome MV3 has no blocking webRequest, so the Chrome build asks AFTER the
+  // navigation starts rather than before it, through webNavigation — see
+  // docs/architecture.md. Neither webRequest permission is ever requested
+  // there, and the store rejects a version that declares what it does not use.
   manifest.optional_permissions = manifest.optional_permissions.filter(
-    (p) => p !== 'webRequestBlocking',
+    (p) => p !== 'webRequestBlocking' && p !== 'webRequest',
   );
 }
 

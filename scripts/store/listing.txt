@@ -1,0 +1,16 @@
+linkward asks where a link should open, before it opens.
+
+Click a link in Slack, Outlook, a PDF or the terminal and it lands in whatever browser window happened to be in front — often signed in as the wrong account, and the page has already loaded by the time you notice.
+
+linkward puts one step in between. When a link arrives from outside the browser, it shows the full address and waits:
+
+• Open it — go ahead.
+• Copy the link and open nothing. Sometimes the answer is "not now", or "not in this account".
+• Close the tab and forget it.
+• Tick "remember this host" and it stops asking for that site.
+
+Being straight about Chrome: a Chrome extension cannot open a tab in a different Chrome profile, and Manifest V3 removed the ability to hold a request back, so linkward redirects the new tab a moment after it starts rather than before it is sent. The Firefox build can do both — it stops the request before it leaves and offers your containers. The page tells you which of the two you are looking at instead of pretending they are the same.
+
+linkward reads no page content, has no server behind it, and sends nothing anywhere. Its settings live in your browser. The wide permission it needs to watch navigations is asked for only when you switch the feature on, and handed straight back when you switch it off.
+
+Open source, MIT licensed: https://github.com/sapn95/linkward
