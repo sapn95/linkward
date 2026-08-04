@@ -1,6 +1,12 @@
 // Generates the extension icons (16/48/128 px): a rounded, gradient badge with
-// a 2×2 grid and one accent square — a fork in the road, which is the whole
-// idea: the link stops here and goes one of several ways.
+// a FORK — one stroke arriving from below and splitting into two, the right arm
+// picked out in amber. That is the whole idea in one shape: the link stops here
+// and goes one of several ways.
+//
+// A grid of squares was the first attempt and it said nothing; every launcher
+// and every dashboard uses one. A fork is the only thing on a toolbar that
+// means "a decision happens here", and it survives being 16 px wide, which is
+// the size that actually decides whether an icon works.
 //
 // Pure Node, with a hand-rolled PNG encoder, so the repo has no image
 // dependency and nothing has to be installed to rebuild them. Edges are 4×4
@@ -18,8 +24,8 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'icons');
 // blue is what both browsers already use for "this is a decision".
 const GRAD_TOP = [47, 111, 235]; // #2F6FEB
 const GRAD_BOTTOM = [30, 78, 176]; // #1E4EB0
-const TILE = [255, 255, 255]; // white squares
-const ACCENT = [255, 203, 0]; // #FFCB00 — the one that was chosen
+const TILE = [255, 255, 255]; // the stem and the left arm
+const ACCENT = [255, 203, 0]; // #FFCB00 — the arm that was chosen
 const SS = 4; // supersampling factor per axis
 
 const CRC_TABLE = (() => {
@@ -125,20 +131,34 @@ function colorAt(px, py, size) {
     lerp(GRAD_TOP[2], GRAD_BOTTOM[2], t),
   ];
 
-  // 2×2 tile grid; the top-right tile is the amber accent.
-  const pad = size * 0.22;
-  const gap = size * 0.1;
-  const cell = (size - pad * 2 - gap) / 2;
-  const tileR = Math.max(1, cell * 0.26);
-  for (let gy = 0; gy < 2; gy++) {
-    for (let gx = 0; gx < 2; gx++) {
-      const x0 = pad + gx * (cell + gap);
-      const y0 = pad + gy * (cell + gap);
-      if (inRoundedRect(px, py, x0, y0, cell, cell, tileR)) {
-        const c = gx === 1 && gy === 0 ? ACCENT : TILE;
-        return [c[0], c[1], c[2], 255];
-      }
-    }
+  // The fork. Drawn as three thick round-capped segments rather than a path,
+  // because a hand-rolled rasteriser has no stroking and the shape has to stay
+  // legible at 16 px: a stem up the middle, then two arms out to the corners.
+  const w = size * 0.135; // stroke half-width
+  const cx = size / 2;
+  const stemBottom = size * 0.82;
+  const split = size * 0.52; // where the stem ends and the arms begin
+  const armX = size * 0.235;
+  const armY = size * 0.24;
+
+  const onSegment = (ax, ay, bx, by) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    // Project the point onto the segment, clamped — that clamp is what gives
+    // the round caps, and the caps are what keep the joint from notching.
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+    const qx = ax + dx * t;
+    const qy = ay + dy * t;
+    return (px - qx) ** 2 + (py - qy) ** 2 <= (w / 2) ** 2;
+  };
+
+  // Right arm first: it is the accented one and must win where they overlap.
+  if (onSegment(cx, split, size - armX, armY)) {
+    return [ACCENT[0], ACCENT[1], ACCENT[2], 255];
+  }
+  if (onSegment(cx, stemBottom, cx, split) || onSegment(cx, split, armX, armY)) {
+    return [TILE[0], TILE[1], TILE[2], 255];
   }
   return [bg[0], bg[1], bg[2], 255];
 }
