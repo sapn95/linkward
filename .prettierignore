@@ -1,0 +1,5 @@
+dist/
+dist-firefox/
+coverage/
+node_modules/
+*.zip

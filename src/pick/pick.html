@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="pick.css" />
+    <title>Open this link…</title>
+  </head>
+  <body>
+    <main>
+      <h1>Where should this open?</h1>
+      <!-- The URL is shown in full and never made clickable: this page is
+           web_accessible, so any site can link to it with a URL of its
+           choosing, and a link here would be a one-click open of whatever a
+           stranger put in the query string. -->
+      <p id="url" class="url"></p>
+
+      <ul id="choices" class="choices" aria-label="Containers"></ul>
+
+      <div class="row">
+        <button id="plain" type="button">Open without a container</button>
+        <button id="copy" type="button">Copy the link, open nothing</button>
+        <button id="cancel" type="button" class="quiet">Close this tab</button>
+      </div>
+
+      <label class="check">
+        <input id="remember" type="checkbox" />
+        Remember this for <span id="host" class="host"></span>
+      </label>
+
+      <p id="note" class="note" hidden></p>
+      <output id="status" class="status" hidden></output>
+    </main>
+    <script type="module" src="pick.js"></script>
+  </body>
+</html>

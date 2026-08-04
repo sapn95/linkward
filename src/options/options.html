@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../pick/pick.css" />
+    <title>linkward</title>
+  </head>
+  <body>
+    <main>
+      <h1>linkward</h1>
+      <p class="note">
+        When another application hands a link to this browser, linkward asks where it should open
+        before it opens — or copies it and opens nothing.
+      </p>
+
+      <label class="check">
+        <input id="enabled" type="checkbox" />
+        Ask before opening links from other applications
+      </label>
+      <p class="note" id="perm-note">
+        Switching this on asks for access to all websites. It is what lets linkward stop a page
+        <em>before</em> it loads, so nothing is fetched and no session is started in the wrong
+        container. Switching it off hands the access back.
+      </p>
+
+      <label class="check">
+        <input id="remember" type="checkbox" />
+        Offer to remember the choice per site
+      </label>
+
+      <h2>Never ask for</h2>
+      <p class="note">One host per line. Subdomains are included.</p>
+      <textarea id="never" rows="5" spellcheck="false"></textarea>
+
+      <p class="note" id="honest"></p>
+      <output id="status" class="status" hidden></output>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

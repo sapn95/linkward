@@ -1,0 +1,33 @@
+{
+  "name": "linkward",
+  "version": "0.1.0",
+  "description": "linkward — asks which Firefox container to open a link in, before it opens. Or just copies the URL.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "node scripts/build.mjs",
+    "build:firefox": "node scripts/build.mjs --firefox",
+    "package": "node scripts/build.mjs --zip && node scripts/build.mjs --firefox --zip",
+    "ci": "npm run lint && npm run format:check && npm run test:coverage && npm run package"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.8.2",
+    "vitest": "^4.1.10"
+  }
+}

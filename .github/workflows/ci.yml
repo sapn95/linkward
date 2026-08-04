@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Dispatchable so the release workflow can run the required checks on its
+  # own PR branch: a pull request opened with the GITHUB_TOKEN does not
+  # trigger `pull_request` runs, and workflow_dispatch is the documented
+  # exception to that rule.
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      # Only that the generator still RUNS. Its PNG output is not byte-identical
+      # across environments (zlib differs between Node builds), so diffing the
+      # result against the committed icons fails on the runner even when nothing
+      # is wrong — the icons are committed artefacts, not a build product.
+      - name: Generate icons (verify the generator still runs)
+        run: npm run icons
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Build & package (Chrome + Firefox)
+        run: npm run package
+
+      - name: Lint Firefox build (web-ext)
+        run: npx --yes web-ext@10 lint --source-dir=dist-firefox --warnings-as-errors=false
+
+      - name: Upload extension builds
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension
+          path: linkward*.zip
+          if-no-files-found: error
+
+      - name: Upload coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
