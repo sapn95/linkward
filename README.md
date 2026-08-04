@@ -87,6 +87,15 @@ No bundler and no runtime dependencies: the source under `src/` **is** the
 artifact. An extension that intercepts navigations should be readable end to end
 by whoever reviews it.
 
+## Publishing
+
+Two stores, one release workflow, and a setup script that creates the Chrome
+Web Store item and writes every secret so nobody has to click through two
+dashboards. What is left is the part no API can do — the store listing and the
+permission justifications.
+
+**→ [docs/publishing.md](docs/publishing.md)**
+
 ## Author & License
 
 Sebastian Winterberger · MIT
