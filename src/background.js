@@ -215,7 +215,12 @@ async function onBeforeNavigate(details) {
   const action = await decide({ ...details, type: 'main_frame' });
   // Chrome has no containers, so a rule can only ever resolve to "no container"
   // here — which means letting the navigation it already started carry on.
-  if (action?.pick) chrome.tabs.update(details.tabId, { url: action.pick });
+  // Caught, because nothing else can be: webNavigation listeners are not
+  // blocking, so this promise is dropped by the dispatcher, and tabs.update
+  // rejects whenever the tab closed or moved on between the event and now.
+  if (action?.pick) {
+    chrome.tabs.update(details.tabId, { url: action.pick }).catch(() => {});
+  }
 }
 
 function arm() {

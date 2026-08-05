@@ -90,10 +90,16 @@ export function resolveRule(rule, containers = []) {
     );
     if (byName) return byName.cookieStoreId;
   }
-  // The id is only a hint, and only where it still names something real: an id
-  // from another profile can collide with a container that is not the one the
-  // rule meant.
-  if (rule.cookieStoreId && list.some((c) => c?.cookieStoreId === rule.cookieStoreId)) {
+  // The id is a fallback for LEGACY rules only — the ones written before names
+  // were stored, which have nothing else to go on.
+  //
+  // It must not be reached once a name has been tried and missed. Ids are
+  // handed out per profile and get reused: a rule saying "Admin" whose stored
+  // id now belongs to "Work" would resolve to Work, and the link would open in
+  // the wrong identity without a word. That is the precise failure this
+  // extension exists to prevent, so a named rule that cannot be matched by name
+  // asks, full stop.
+  if (!wanted && rule.cookieStoreId && list.some((c) => c?.cookieStoreId === rule.cookieStoreId)) {
     return rule.cookieStoreId;
   }
   return undefined;

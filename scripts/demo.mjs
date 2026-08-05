@@ -48,11 +48,11 @@ async function fire(url) {
   if (os === 'darwin') {
     await run('open', browser ? ['-a', browser, url] : [url]);
   } else if (os === 'win32') {
-    // The empty string is start's window TITLE, not a stray argument: without
-    // it, start reads a quoted URL as the title and opens nothing.
-    await run('cmd', browser ? ['/c', 'start', '', browser, url] : ['/c', 'start', '', url], {
-      windowsVerbatimArguments: true,
-    });
+    // Not `cmd /c start`: cmd re-parses its arguments, so `&` in a URL becomes
+    // a command separator and anything after it is run. rundll32 hands the URL
+    // to the registered handler with no shell in between.
+    if (browser) await run(browser, [url]);
+    else await run('rundll32', ['url.dll,FileProtocolHandler', url]);
   } else {
     // xdg-open cannot be told which browser to use, so name the command itself.
     await run(browser ?? 'xdg-open', [url]);

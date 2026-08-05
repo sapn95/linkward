@@ -399,3 +399,36 @@ describe('when the browser refuses to store something', () => {
     expect($('status').textContent).toMatch(/could not forget example\.com/i);
   });
 });
+
+describe('when the settings cannot be read', () => {
+  it('refuses to export rather than write an empty file over them later', async () => {
+    // A failed read turned into `{}` is a valid-looking backup of nothing,
+    // reported as a success, and restored one day over the real thing.
+    await mount({ granted: true, rules: { 'a.test': { container: 'Work' } } });
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.chrome.storage.sync.get = async () => {
+      throw new Error('storage is unavailable');
+    };
+    $('export').click();
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not read the settings/i);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('refuses to import rather than reset what the file does not carry', async () => {
+    // `enabled` and `lastContainer` are never in the file. Falling back to the
+    // defaults for them would switch the feature off as a side effect.
+    await mount({ granted: true, settings: { enabled: true, neverAsk: ['kept.test'] } });
+    globalThis.chrome.storage.sync.get = async () => {
+      throw new Error('storage is unavailable');
+    };
+    const file = {
+      text: async () => JSON.stringify({ format: 'linkward-settings', version: 1, rules: {} }),
+    };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not import/i);
+    expect(stored()?.enabled).toBe(true);
+  });
+});

@@ -1,11 +1,4 @@
-import {
-  getSettings,
-  saveSettings,
-  getRules,
-  setRules,
-  removeRule,
-  DEFAULT_SETTINGS,
-} from '../lib/storage.js';
+import { getSettings, saveSettings, getRules, setRules, removeRule } from '../lib/storage.js';
 import {
   hasWatchPermissions,
   requestWatchPermissions,
@@ -164,10 +157,17 @@ async function changeRule(host, value) {
 // --- The settings file -----------------------------------------------------
 
 async function exportSettings() {
-  const [settings, rules] = await Promise.all([
-    getSettings().catch(() => ({})),
-    getRules().catch(() => ({})),
-  ]);
+  // NOT caught into an empty object: a read that failed would be written out as
+  // a valid file with nothing in it, reported as a success, and restored later
+  // over the settings it was supposed to be a copy of.
+  let settings;
+  let rules;
+  try {
+    [settings, rules] = await Promise.all([getSettings(), getRules()]);
+  } catch (err) {
+    say(`Could not read the settings to export: ${err?.message || err}`);
+    return;
+  }
   const blob = new Blob([`${JSON.stringify(toTransfer(settings, rules), null, 2)}\n`], {
     type: 'application/json',
   });
@@ -195,7 +195,9 @@ async function importSettings(e) {
   if (!file) return;
   try {
     const incoming = fromTransfer(JSON.parse(await file.text()));
-    const settings = await getSettings().catch(() => DEFAULT_SETTINGS);
+    // Also not caught: falling back to the defaults here would quietly reset
+    // `enabled` and `lastContainer`, neither of which is in the file.
+    const settings = await getSettings();
     // An import REPLACES the remembered sites; it does not merge. Reporting
     // only what arrived would leave somebody with fewer rules than they had
     // and no hint that anything went.

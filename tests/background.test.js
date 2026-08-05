@@ -286,8 +286,7 @@ describe('a host the user already answered for', () => {
     // Cancelled, not redirected: a redirect cannot move a tab into another
     // cookie store, so the page would load in the wrong one first.
     expect(answer).toEqual({ cancel: true });
-    await Promise.resolve();
-    await Promise.resolve();
+    await settle(20);
     expect(c.tabs.create).toHaveBeenCalledWith({
       url: 'https://example.com/doc',
       active: true,

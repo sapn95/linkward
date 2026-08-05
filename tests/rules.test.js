@@ -53,6 +53,15 @@ describe('turning a rule into a container', () => {
     ).toBeUndefined();
   });
 
+  it('never falls back to the id once a NAME has been tried and missed', () => {
+    // Ids are handed out per profile and get reused. A rule for "Admin" whose
+    // stored id now belongs to "Work" would open the link in Work — the wrong
+    // identity, silently, which is the precise thing this extension exists to
+    // prevent. A named rule that cannot be matched by name asks, full stop.
+    const collided = { container: 'Admin', cookieStoreId: WORK.cookieStoreId };
+    expect(resolveRule(collided, HERE)).toBeUndefined();
+  });
+
   it('says ASK for a container that is not here, rather than guessing', () => {
     // The whole point. Anything other than undefined here means opening a
     // session in an identity the user did not choose.
