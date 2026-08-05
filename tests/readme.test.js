@@ -26,6 +26,9 @@ describe('the documented settings file', () => {
   it('is accepted by the importer, exactly as printed', () => {
     const out = fromTransfer(JSON.parse(example));
     expect(out.settings.neverAsk).toEqual(['intranet.example', 'mail.example']);
+    // Without this the test passes even when the importer drops the field and
+    // hands back the default, which is exactly how documentation goes stale.
+    expect(out.settings.rememberPrompt).toBe('ticked');
     expect(out.rules['docs.example.com']).toEqual({
       container: 'Work',
       cookieStoreId: 'firefox-container-2',

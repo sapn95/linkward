@@ -85,10 +85,11 @@ sequenceDiagram
     end
 
     rect rgb(240, 242, 246)
-    Note over App,S: Chrome — after it has begun
+    Note over App,S: Chrome — it cannot be held
     App->>B: open this link
-    B->>S: request already on its way
     B->>L: onBeforeNavigate
+    Note right of L: fires first, but cannot<br/>hold anything: MV3 has<br/>no blocking form
+    B->>S: request goes while linkward decides
     L->>B: turn the tab around
     Note right of L: the page may flash;<br/>no containers to offer
     end
@@ -145,8 +146,9 @@ identical to a broken install, so the page says so in as many words.
 
 ## The settings file
 
-**Settings → Settings file → Export** writes everything on that page as JSON.
-**Import** replaces it. The shape is stable and small enough to edit by hand:
+**Settings → Settings file → Export** writes the settings that travel, and the
+remembered hosts, as JSON — two fields are left out on purpose, see below.
+**Import** replaces both. The shape is stable and small enough to edit by hand:
 
 ```json
 {

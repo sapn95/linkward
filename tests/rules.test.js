@@ -161,12 +161,21 @@ describe('the settings file', () => {
   });
 
   it('takes the default for a remember setting that is not one of the three', () => {
-    const out = fromTransfer({
-      format: FORMAT,
-      version: 1,
-      settings: { rememberPrompt: 'sometimes' },
-    });
-    expect(out.settings.rememberPrompt).toBe('unticked');
+    // Including the boolean this used to be, in either direction, and in either
+    // field: a file written by an older linkward names the old key, and one
+    // hand-edited from an old example may put a boolean in the new one.
+    for (const settings of [
+      { rememberPrompt: 'sometimes' },
+      { rememberPrompt: true },
+      { rememberPrompt: false },
+      { rememberChoices: true },
+      { rememberChoices: false },
+      {},
+    ]) {
+      const out = fromTransfer({ format: FORMAT, version: 1, settings });
+      expect(out.settings.rememberPrompt).toBe('unticked');
+      expect(out.settings.rememberChoices).toBeUndefined();
+    }
   });
 
   it('cleans the never-ask list it is handed', () => {
