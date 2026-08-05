@@ -30,6 +30,10 @@ function safeTarget(value) {
 
 const target = safeTarget(raw);
 
+// Needed again when a choice is remembered: a rule stores the container's NAME,
+// and only this list can turn the id that was clicked back into one.
+let containersHere = [];
+
 async function init() {
   if (!target) {
     urlEl.textContent = 'That is not a link this page can open.';
@@ -43,6 +47,7 @@ async function init() {
   rememberEl.checked = Boolean(settings.rememberChoices);
 
   const containers = await listContainers();
+  containersHere = containers;
   if (containers.length > 0) {
     renderContainers(containers, settings.lastContainer);
   } else if (isFirefox()) {
@@ -96,7 +101,17 @@ async function open(cookieStoreId) {
     // Tell the background this tab is our doing, so the navigation it is about
     // to make is not intercepted straight back to this page.
     chrome.runtime.sendMessage({ type: 'linkward:opened', tabId: tab.id });
-    if (rememberEl.checked) await setRule(target.host, cookieStoreId).catch(() => {});
+    // The NAME, not just the id: an id is minted per profile, and this rule
+    // follows the account onto machines where the same id means nothing. The id
+    // travels alongside as a hint for this machine.
+    if (rememberEl.checked) {
+      const chosen = containersHere.find((c) => c.cookieStoreId === cookieStoreId);
+      await setRule(target.host, {
+        container: chosen?.name ?? null,
+        cookieStoreId,
+        ...(cookieStoreId ? {} : { plain: true }),
+      }).catch(() => {});
+    }
     await saveSettings({
       ...(await getSettings()),
       lastContainer: cookieStoreId,

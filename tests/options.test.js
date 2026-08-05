@@ -24,16 +24,24 @@ function makeArea(seed = {}) {
 let requested;
 let removed;
 
-async function mount({ firefox = true, granted = false, grant = true, settings = {} } = {}) {
+async function mount({
+  firefox = true,
+  granted = false,
+  grant = true,
+  settings = {},
+  rules = {},
+  containers = [],
+} = {}) {
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   requested = [];
   removed = [];
   let held = granted;
   globalThis.chrome = {
     runtime: { getURL: () => `${firefox ? 'moz' : 'chrome'}-extension://linkward/` },
-    storage: { sync: makeArea({ settings }), local: makeArea() },
+    storage: { sync: makeArea({ settings, rules }), local: makeArea() },
   };
   globalThis.browser = {
+    contextualIdentities: { query: async () => containers },
     permissions: {
       contains: vi.fn(async () => held),
       request: vi.fn(async (p) => {
@@ -59,6 +67,7 @@ async function settle(times = 6) {
 
 const $ = (id) => document.getElementById(id);
 const stored = () => globalThis.chrome.storage.sync.store.settings;
+const stored2 = () => globalThis.chrome.storage.sync.store;
 
 afterEach(() => {
   delete globalThis.chrome;
@@ -185,5 +194,241 @@ describe('what the page admits to', () => {
   it('says on Firefox that the page is never fetched', async () => {
     await mount({ firefox: true });
     expect($('honest').textContent).toMatch(/before it is sent/i);
+  });
+});
+
+const WORK = { cookieStoreId: 'firefox-container-2', name: 'Work', color: 'blue' };
+const HOME = { cookieStoreId: 'firefox-container-3', name: 'Home', color: 'green' };
+const rows = () => [...document.querySelectorAll('#rules li')];
+const rowFor = (host) => rows().find((li) => li.querySelector('.host')?.textContent === host);
+
+describe('the remembered sites', () => {
+  const two = {
+    'example.com': { container: 'Work', cookieStoreId: WORK.cookieStoreId },
+    'news.example': { container: null, cookieStoreId: '', plain: true },
+  };
+
+  it('says so plainly when there are none', async () => {
+    await mount({ granted: true });
+    expect($('rules-empty').hidden).toBe(false);
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('lists them, sorted, with where each one opens', async () => {
+    await mount({ granted: true, rules: two, containers: [WORK, HOME] });
+    expect(rows().map((li) => li.querySelector('.host').textContent)).toEqual([
+      'example.com',
+      'news.example',
+    ]);
+    expect(rowFor('example.com').querySelector('select').value).toBe(WORK.cookieStoreId);
+    expect(rowFor('news.example').querySelector('select').value).toBe('');
+  });
+
+  it('shows the host as text, never as markup', async () => {
+    // A host arrives from a page the user was sent to, so it is not ours.
+    await mount({
+      granted: true,
+      rules: { '<img src=x onerror=alert(1)>.test': { container: 'Work' } },
+      containers: [WORK],
+    });
+    expect(document.querySelector('#rules img')).toBeNull();
+    expect(rows()[0].querySelector('.host').textContent).toContain('<img');
+  });
+
+  it('names a container this browser does not have instead of pretending', async () => {
+    // Synced from another machine, or renamed since. Showing it as "No
+    // container" would be a lie about what will happen to that host.
+    await mount({
+      granted: true,
+      rules: { 'example.com': { container: 'Admin', cookieStoreId: 'gone' } },
+      containers: [WORK],
+    });
+    const select = rowFor('example.com').querySelector('select');
+    expect(select.value).toBe('__missing__');
+    expect(select.selectedOptions[0].textContent).toMatch(/Admin.*not here/i);
+  });
+
+  it('leaves that rule alone rather than rewriting it', async () => {
+    // Re-selecting the placeholder must not turn a rule for a container that
+    // exists elsewhere into "no container" here.
+    await mount({
+      granted: true,
+      rules: { 'example.com': { container: 'Admin', cookieStoreId: 'gone' } },
+      containers: [WORK],
+    });
+    const select = rowFor('example.com').querySelector('select');
+    select.value = '__missing__';
+    select.dispatchEvent(new Event('change'));
+    await settle();
+    expect(stored2().rules['example.com'].container).toBe('Admin');
+  });
+
+  it('moves a host to another container', async () => {
+    await mount({ granted: true, rules: two, containers: [WORK, HOME] });
+    const select = rowFor('example.com').querySelector('select');
+    select.value = HOME.cookieStoreId;
+    select.dispatchEvent(new Event('change'));
+    await settle();
+    // The NAME is what is stored: the id means nothing on another machine.
+    expect(stored2().rules['example.com']).toEqual({
+      container: 'Home',
+      cookieStoreId: HOME.cookieStoreId,
+    });
+  });
+
+  it('forgets one, and only that one', async () => {
+    await mount({ granted: true, rules: two, containers: [WORK, HOME] });
+    rowFor('example.com').querySelector('button').click();
+    // The row goes when the list is read back, which is two awaits past the write.
+    await settle(20);
+    expect(Object.keys(stored2().rules)).toEqual(['news.example']);
+    expect(rows()).toHaveLength(1);
+  });
+});
+
+describe('the settings file, from the page', () => {
+  function catchDownload() {
+    const clicks = [];
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const real = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = real(tag);
+      if (tag === 'a') el.click = () => clicks.push({ href: el.href, name: el.download });
+      return el;
+    });
+    return clicks;
+  }
+
+  it('offers a file named for the day, and lets the blob go again', async () => {
+    // A blob URL that is never revoked is held for as long as the page is open.
+    await mount({ granted: true, rules: { 'a.test': { container: 'Work' } } });
+    const clicks = catchDownload();
+    $('export').click();
+    await settle(20);
+    expect(clicks[0].name).toMatch(/^linkward-settings-\d{4}-\d{2}-\d{2}\.json$/);
+    // Revoked a tick later, not in the same turn as the click — doing it there
+    // has been known to cancel the download it just started.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
+  });
+
+  it('takes a file back in and shows it straight away', async () => {
+    await mount({ granted: true });
+    const file = {
+      text: async () =>
+        JSON.stringify({
+          format: 'linkward-settings',
+          version: 1,
+          settings: { neverAsk: ['imported.test'], rememberChoices: true },
+          rules: { 'b.test': { container: 'Work', cookieStoreId: 'firefox-container-2' } },
+        }),
+    };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect(stored2().rules['b.test'].container).toBe('Work');
+    expect($('never').value).toBe('imported.test');
+    expect($('remember').checked).toBe(true);
+  });
+
+  it('says what was wrong with a file it cannot read, and changes nothing', async () => {
+    await mount({ granted: true, settings: { neverAsk: ['kept.test'] } });
+    const file = { text: async () => '{"format":"something-else"}' };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('status').textContent).toMatch(/not a linkward settings file/i);
+    expect($('never').value).toBe('kept.test');
+  });
+
+  it('survives a file that is not JSON at all', async () => {
+    await mount({ granted: true });
+    const file = { text: async () => 'not json {' };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not import/i);
+  });
+
+  it('clears the file input, so the same file can be chosen twice', async () => {
+    // Without this, picking the same file again fires no change event and the
+    // button silently does nothing.
+    await mount({ granted: true });
+    const file = { text: async () => '{}' };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('import-file').value).toBe('');
+  });
+});
+
+describe('when the browser refuses to store something', () => {
+  it('says so instead of leaving the wrong answer on screen', async () => {
+    // Synced storage has a size limit and can refuse. A page about where your
+    // sessions open must never show one thing while another applies.
+    await mount({
+      granted: true,
+      rules: { 'example.com': { container: 'Work', cookieStoreId: WORK.cookieStoreId } },
+      containers: [WORK, HOME],
+    });
+    globalThis.chrome.storage.sync.set = async () => {
+      throw new Error('QUOTA_BYTES_PER_ITEM quota exceeded');
+    };
+    const select = rowFor('example.com').querySelector('select');
+    select.value = HOME.cookieStoreId;
+    select.dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not save that.*quota/i);
+    // And the row is redrawn from what is really stored, not from the click.
+    expect(rowFor('example.com').querySelector('select').value).toBe(WORK.cookieStoreId);
+  });
+
+  it('says so when a host cannot be forgotten', async () => {
+    await mount({
+      granted: true,
+      rules: { 'example.com': { container: 'Work' } },
+      containers: [WORK],
+    });
+    globalThis.chrome.storage.sync.set = async () => {
+      throw new Error('nope');
+    };
+    rowFor('example.com').querySelector('button').click();
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not forget example\.com/i);
+  });
+});
+
+describe('when the settings cannot be read', () => {
+  it('refuses to export rather than write an empty file over them later', async () => {
+    // A failed read turned into `{}` is a valid-looking backup of nothing,
+    // reported as a success, and restored one day over the real thing.
+    await mount({ granted: true, rules: { 'a.test': { container: 'Work' } } });
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.chrome.storage.sync.get = async () => {
+      throw new Error('storage is unavailable');
+    };
+    $('export').click();
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not read the settings/i);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('refuses to import rather than reset what the file does not carry', async () => {
+    // `enabled` and `lastContainer` are never in the file. Falling back to the
+    // defaults for them would switch the feature off as a side effect.
+    await mount({ granted: true, settings: { enabled: true, neverAsk: ['kept.test'] } });
+    globalThis.chrome.storage.sync.get = async () => {
+      throw new Error('storage is unavailable');
+    };
+    const file = {
+      text: async () => JSON.stringify({ format: 'linkward-settings', version: 1, rules: {} }),
+    };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect($('status').textContent).toMatch(/could not import/i);
+    expect(stored()?.enabled).toBe(true);
   });
 });

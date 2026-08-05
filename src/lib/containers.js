@@ -63,6 +63,48 @@ const COLORS = {
   toolbar: 'currentColor',
 };
 
+/**
+ * Turn a remembered rule into something openable, against the containers this
+ * browser has right now.
+ *
+ * Returns a cookieStoreId, `''` for "open with no container", or `undefined`
+ * for "this rule cannot be honoured here" — a rule made on another machine, or
+ * for a container since renamed or deleted. Undefined must mean ASK: silently
+ * opening somewhere else would be the one failure a user of this extension
+ * cannot forgive.
+ *
+ * @param {{container: string|null, cookieStoreId?: string, plain?: boolean}|null} rule
+ * @param {Array<{cookieStoreId: string, name: string}>} containers
+ */
+export function resolveRule(rule, containers = []) {
+  if (!rule || typeof rule !== 'object') return undefined;
+  if (rule.plain) return '';
+  const list = Array.isArray(containers) ? containers : [];
+  const wanted = typeof rule.container === 'string' ? rule.container.trim().toLowerCase() : '';
+  if (wanted) {
+    const byName = list.find(
+      (c) =>
+        String(c?.name ?? '')
+          .trim()
+          .toLowerCase() === wanted,
+    );
+    if (byName) return byName.cookieStoreId;
+  }
+  // The id is a fallback for LEGACY rules only — the ones written before names
+  // were stored, which have nothing else to go on.
+  //
+  // It must not be reached once a name has been tried and missed. Ids are
+  // handed out per profile and get reused: a rule saying "Admin" whose stored
+  // id now belongs to "Work" would resolve to Work, and the link would open in
+  // the wrong identity without a word. That is the precise failure this
+  // extension exists to prevent, so a named rule that cannot be matched by name
+  // asks, full stop.
+  if (!wanted && rule.cookieStoreId && list.some((c) => c?.cookieStoreId === rule.cookieStoreId)) {
+    return rule.cookieStoreId;
+  }
+  return undefined;
+}
+
 /** A CSS colour for a container, or '' for a name this build does not know. */
 export function containerColor(color) {
   const key = String(color ?? '').toLowerCase();

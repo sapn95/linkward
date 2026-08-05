@@ -25,6 +25,14 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS.enabled).toBe(false);
   });
 
+  it('does not offer to silence a host until asked to', async () => {
+    // On the picker this is a tick box, and a ticked one turns a careless click
+    // into "never ask about this host again" — the extension quietly stopping
+    // the one thing it was installed for, with nobody having decided that.
+    expect(DEFAULT_SETTINGS.rememberChoices).toBe(false);
+    await expect(getSettings()).resolves.toMatchObject({ rememberChoices: false });
+  });
+
   it('fills in the defaults', async () => {
     await expect(getSettings()).resolves.toMatchObject(DEFAULT_SETTINGS);
   });
@@ -61,12 +69,14 @@ describe('remembered per-host choices', () => {
   it('round-trips a rule, and answers {} with no storage at all', async () => {
     const { getRules, setRule } = await import('../src/lib/storage.js');
     await expect(getRules()).resolves.toEqual({});
-    await setRule('example.com', 'firefox-container-2');
-    await expect(getRules()).resolves.toEqual({ 'example.com': 'firefox-container-2' });
+    await setRule('example.com', { container: 'Work', cookieStoreId: 'firefox-container-2' });
+    await expect(getRules()).resolves.toEqual({
+      'example.com': { container: 'Work', cookieStoreId: 'firefox-container-2' },
+    });
 
     delete globalThis.chrome;
     await expect(getRules()).resolves.toEqual({});
-    await expect(setRule('x', 'y')).resolves.toBeUndefined();
+    await expect(setRule('x', { container: 'y' })).rejects.toThrow(/no extension storage/i);
   });
 
   it('ignores a rules blob that is not an object', async () => {

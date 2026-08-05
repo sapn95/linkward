@@ -12,8 +12,12 @@ export const DEFAULT_SETTINGS = {
   enabled: false,
   // Hosts never to ask about, matched on the host and its subdomains.
   neverAsk: [],
-  // Remember the choice per host and stop asking for it again.
-  rememberChoices: true,
+  // Remember the choice per host and stop asking for it again. Off by default,
+  // and deliberately: ticked, one careless click on the picker silences a host
+  // for good, and the extension quietly stops doing the thing it was installed
+  // for. Someone who wants that can say so — the tick is right there, and it
+  // stays on once set.
+  rememberChoices: false,
   // The container picked last, offered first next time. Machine-local.
   lastContainer: '',
 };
@@ -59,18 +63,93 @@ export async function saveSettings(settings) {
   return { ...synced, ...here };
 }
 
-/** Per-host decisions the user asked to be remembered. Machine-local. */
-export async function getRules() {
-  const l = local();
-  if (!l) return {};
-  const r = (await l.get('rules'))?.rules;
-  return r && typeof r === 'object' ? r : {};
+// --- Remembered hosts ------------------------------------------------------
+//
+// "Always open example.com in Work" is a decision about a CONTAINER, and a
+// container is a name to the person who made it and a `cookieStoreId` to the
+// browser. The id is minted per profile, so storing only the id and syncing it
+// would mean the same rule opening a different container on another machine —
+// or none at all. So the name is what is stored and what is matched on, and the
+// id is kept beside it as a hint that is only trusted on the machine that wrote
+// it.
+//
+// `container: null` is a rule too, and a deliberate one: "always open this host
+// with no container at all".
+
+export const RULES_KEY = 'rules';
+
+/** One entry, from anything that might be on disk. Returns null if unusable. */
+function readRule(value) {
+  // The shape before rules were synced: a bare cookieStoreId, no name. Still
+  // honoured on the machine that wrote it, which is the only place it means
+  // anything.
+  if (typeof value === 'string') return value ? { container: null, cookieStoreId: value } : null;
+  if (!value || typeof value !== 'object') return null;
+  const container = typeof value.container === 'string' ? value.container : null;
+  const cookieStoreId = typeof value.cookieStoreId === 'string' ? value.cookieStoreId : '';
+  // Neither a name nor an id, and `plain` not set: nothing to act on.
+  if (!container && !cookieStoreId && !value.plain) return null;
+  return { container, cookieStoreId, ...(value.plain ? { plain: true } : {}) };
 }
 
-export async function setRule(host, cookieStoreId) {
+export function readRules(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  // Null prototype while filling it: a settings file can carry a `__proto__`
+  // key — JSON.parse makes it an own property — and assigning to it on an
+  // ordinary object runs the setter, which drops the rule and replaces the
+  // prototype of the map the interception then reads. Spreading it out again at
+  // the end copies own properties without invoking any setter, so callers get a
+  // normal object back.
+  const out = Object.create(null);
+  for (const [host, value] of Object.entries(raw)) {
+    if (typeof host !== 'string' || !host) continue;
+    const rule = readRule(value);
+    if (rule) out[host.toLowerCase()] = rule;
+  }
+  return { ...out };
+}
+
+/** Per-host decisions the user asked to be remembered. Follows the account. */
+export async function getRules() {
+  const s = sync();
   const l = local();
-  if (!l) return;
+  const synced = s ? (await s.get(RULES_KEY))?.[RULES_KEY] : null;
+  if (synced) return readRules(synced);
+  // Written by a version that kept them local. Read them so nobody's remembered
+  // hosts disappear on upgrade; the next write moves them across.
+  const here = l ? (await l.get(RULES_KEY))?.[RULES_KEY] : null;
+  return readRules(here);
+}
+
+export async function setRules(rules) {
+  const clean = readRules(rules);
+  const s = sync();
+  const l = local();
+  if (!s && !l) {
+    // Resolving quietly here is how a page ends up saying "example.com now
+    // opens in Work" over storage that was never touched.
+    throw new Error('No extension storage available.');
+  }
+  if (s) await s.set({ [RULES_KEY]: clean });
+  // The read falls back to local for rules an older version left there. Writing
+  // only to sync would leave those in place under a newer copy, so a legacy
+  // rule that was just deleted comes back the next time sync is empty.
+  if (l) await l.set({ [RULES_KEY]: s ? {} : clean });
+  return clean;
+}
+
+/**
+ * @param {string} host
+ * @param {{container: string|null, cookieStoreId?: string, plain?: boolean}} rule
+ */
+export async function setRule(host, rule) {
   const rules = await getRules();
-  rules[host] = cookieStoreId;
-  await l.set({ rules });
+  rules[String(host).toLowerCase()] = rule;
+  return setRules(rules);
+}
+
+export async function removeRule(host) {
+  const rules = await getRules();
+  delete rules[String(host).toLowerCase()];
+  return setRules(rules);
 }
