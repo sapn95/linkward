@@ -94,13 +94,19 @@ function readRule(value) {
 
 export function readRules(raw) {
   if (!raw || typeof raw !== 'object') return {};
-  const out = {};
+  // Null prototype while filling it: a settings file can carry a `__proto__`
+  // key — JSON.parse makes it an own property — and assigning to it on an
+  // ordinary object runs the setter, which drops the rule and replaces the
+  // prototype of the map the interception then reads. Spreading it out again at
+  // the end copies own properties without invoking any setter, so callers get a
+  // normal object back.
+  const out = Object.create(null);
   for (const [host, value] of Object.entries(raw)) {
     if (typeof host !== 'string' || !host) continue;
     const rule = readRule(value);
     if (rule) out[host.toLowerCase()] = rule;
   }
-  return out;
+  return { ...out };
 }
 
 /** Per-host decisions the user asked to be remembered. Follows the account. */

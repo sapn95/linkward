@@ -27,12 +27,43 @@ const candidates = new Map();
 // Tabs linkward opened itself. Without this the picker's own "open it" would be
 // intercepted and we would ask about our own answer, for ever.
 const ours = new Set();
-// How many tabs linkward is in the middle of opening. See openThere().
-let opening = 0;
+// The tabs linkward is in the middle of opening, by the address each was given:
+// url -> how many are outstanding for it.
+//
+// A plain counter was not enough. tabs.onCreated fires before tabs.create
+// resolves, so the claim has to be staked before the id is known — but "the
+// next tab to appear" also claims a genuinely EXTERNAL link that arrives in
+// that same moment, and that link is then never asked about. Two remembered
+// links at once had the mirror problem: one finishing cancelled the other's
+// claim. Matching on the address the tab was opened with costs nothing and only
+// ever claims a tab we asked for.
+const pending = new Map();
+
+function claim(url) {
+  pending.set(url, (pending.get(url) ?? 0) + 1);
+}
+
+function release(url) {
+  const left = (pending.get(url) ?? 0) - 1;
+  if (left > 0) pending.set(url, left);
+  else pending.delete(url);
+}
+
+/** Was this tab opened by us, for this address? Consumes the claim if so. */
+function claimed(tab) {
+  // pendingUrl as well as url: which of the two carries the address a tab was
+  // created with differs between the browsers, and between versions of each.
+  for (const url of [tab?.url, tab?.pendingUrl]) {
+    if (url && pending.has(url)) {
+      release(url);
+      return true;
+    }
+  }
+  return false;
+}
 
 chrome.tabs.onCreated.addListener((tab) => {
-  if (opening > 0) {
-    opening--;
+  if (claimed(tab)) {
     ours.add(tab.id);
     return;
   }
@@ -100,14 +131,12 @@ async function rememberedFor(url) {
 /**
  * Open `url` in `cookieStoreId` and take the tab that was heading there away.
  *
- * `opening` exists because tabs.onCreated fires before tabs.create resolves:
- * claiming the new tab only afterwards is a race, and its loser is an endless
- * loop of linkward asking about its own answer. The counter claims the next tab
- * to appear; clearing the flags again once the id is known covers the case
- * where something else got there first.
+ * The claim exists because tabs.onCreated fires before tabs.create resolves:
+ * recognising the new tab only afterwards is a race, and its loser is an
+ * endless loop of linkward asking about its own answer.
  */
 async function openThere(tabId, url, cookieStoreId) {
-  opening++;
+  claim(url);
   let created;
   try {
     created = await chrome.tabs.create({ url, active: true, cookieStoreId });
@@ -115,18 +144,17 @@ async function openThere(tabId, url, cookieStoreId) {
     // The container went away between resolving the rule and acting on it. The
     // original request is already cancelled, so put the picker in that tab
     // rather than leave a blank one and no explanation.
-    opening = Math.max(0, opening - 1);
+    release(url);
     const target = new URL(chrome.runtime.getURL(PICK_PAGE));
     target.searchParams.set('url', url);
     await chrome.tabs.update(tabId, { url: target.toString() }).catch(() => {});
     return;
   }
-  // Whether or not onCreated got there first, the claim is spent now. Left
-  // standing it would be collected by the next tab to appear — a genuinely
-  // external link, silently treated as our own and never asked about.
-  // Nothing is lost by dropping it: onCreated checks `ours` as well, and the id
-  // is known from here on.
-  opening = 0;
+  // The id is known from here on, so the claim has done its job either way.
+  // Released by ADDRESS: a concurrent open for a different link keeps its own,
+  // where a shared counter cancelled it and that tab was then flagged a
+  // candidate and intercepted as if somebody else had opened it.
+  release(url);
   if (typeof created?.id === 'number') {
     ours.add(created.id);
     candidates.delete(created.id);

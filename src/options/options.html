@@ -46,7 +46,9 @@
         Answered once on the picker and not asked about again. Change where one of them opens, or
         drop it to be asked the next time.
       </p>
-      <p class="note" id="rules-empty">Nothing remembered yet.</p>
+      <!-- Hidden until the list has been read: it would otherwise say
+           "nothing remembered" for a moment to somebody who has plenty. -->
+      <p class="note" id="rules-empty" hidden>Nothing remembered yet.</p>
       <ul id="rules" class="rules"></ul>
 
       <h2>Settings file</h2>

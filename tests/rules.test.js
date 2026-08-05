@@ -173,3 +173,21 @@ describe('the settings file', () => {
     expect(fileName(Date.parse('2026-08-05T22:10:00Z'))).toBe('linkward-settings-2026-08-05.json');
   });
 });
+
+describe('a settings file that is trying something', () => {
+  it('cannot replace the prototype of the map the interception reads', () => {
+    // JSON.parse makes `__proto__` an OWN property, so assigning it onto an
+    // ordinary object runs the setter: the rule vanishes and every lookup on
+    // the returned map goes through an attacker-chosen prototype.
+    const hostile = JSON.parse('{"__proto__": {"container": "Work"}, "ok.test": {"plain": true}}');
+    const rules = readRules(hostile);
+    expect(Object.getPrototypeOf(rules)).toBe(Object.prototype);
+    expect({}.container).toBeUndefined();
+    expect(rules['ok.test']).toEqual({ container: null, cookieStoreId: '', plain: true });
+  });
+
+  it('does not let an unrelated host inherit a rule', () => {
+    const rules = readRules(JSON.parse('{"__proto__": {"container": "Work"}}'));
+    expect(rules['never-set.test']).toBeUndefined();
+  });
+});

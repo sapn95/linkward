@@ -470,8 +470,8 @@ describe('opening in a remembered container, when it goes wrong', () => {
     // staked up front, the tab is flagged a candidate and linkward asks about
     // the answer it just gave.
     const c = await pinned(
-      vi.fn(async () => {
-        await c.tabs.onCreated.emit({ id: 42 });
+      vi.fn(async ({ url }) => {
+        await c.tabs.onCreated.emit({ id: 42, url });
         return { id: 42 };
       }),
     );
@@ -482,14 +482,60 @@ describe('opening in a remembered container, when it goes wrong', () => {
   });
 
   it('does not let a spent claim swallow the next external link', async () => {
-    // The claim is dropped once the id is known. Left standing, the very next
-    // tab from another application would be taken for one of ours.
+    // The claim is dropped once the id is known, and it only ever matched the
+    // address we opened. Left standing, the very next tab from another
+    // application would be taken for one of ours and never asked about.
     const c = await pinned(vi.fn(async () => ({ id: 42 })));
     await c.tabs.onCreated.emit({ id: 7 });
     await ask(c, {});
     await settle(20);
-    await c.tabs.onCreated.emit({ id: 99 });
+    await c.tabs.onCreated.emit({ id: 99, url: 'https://elsewhere.example/' });
     const answer = await ask(c, { tabId: 99, url: 'https://elsewhere.example/' });
     expect(answer.redirectUrl).toContain('pick/pick.html');
+  });
+});
+
+describe('two remembered links arriving at once', () => {
+  const WORK = 'firefox-container-2';
+
+  it('does not let one opening cancel the other, or swallow a third link', async () => {
+    // Both stake a claim before tabs.create resolves. A shared counter got both
+    // halves wrong: the first to finish cancelled the second's claim, and while
+    // either was in flight ANY new tab was taken for ours — including a link
+    // somebody had just clicked in another application.
+    const c = await boot({ settings: { enabled: true } });
+    c.storage.sync.store.rules = {
+      'example.com': { container: 'Work', cookieStoreId: WORK },
+      'other.example': { container: 'Work', cookieStoreId: WORK },
+    };
+    globalThis.browser = {
+      contextualIdentities: { query: async () => [{ cookieStoreId: WORK, name: 'Work' }] },
+    };
+    const held = [];
+    let next = 100;
+    c.tabs.create = vi.fn(
+      ({ url }) => new Promise((resolve) => held.push({ url, go: () => resolve({ id: next++ }) })),
+    );
+
+    await c.tabs.onCreated.emit({ id: 7 });
+    await ask(c, { tabId: 7 });
+    await c.tabs.onCreated.emit({ id: 8 });
+    await ask(c, { tabId: 8, url: 'https://other.example/x' });
+    await settle();
+    expect(held).toHaveLength(2);
+
+    // A third tab, from another application, while both are still in flight.
+    // It is nothing to do with either address, so it must still be asked about.
+    await c.tabs.onCreated.emit({ id: 50, url: 'https://stranger.example/' });
+    const stranger = await ask(c, { tabId: 50, url: 'https://stranger.example/' });
+    expect(stranger.redirectUrl).toContain('pick/pick.html');
+
+    // The first finishes; the second's claim must survive it.
+    held[0].go();
+    await settle(20);
+    await c.tabs.onCreated.emit({ id: 101, url: held[1].url });
+    held[1].go();
+    await settle(20);
+    expect(await ask(c, { tabId: 101, url: held[1].url })).toEqual({});
   });
 });
