@@ -23,7 +23,7 @@ function makeArea(seed = {}) {
   };
 }
 
-async function mount(url, { containers = [], firefox = true, local = {} } = {}) {
+async function mount(url, { containers = [], firefox = true, local = {}, sync = {} } = {}) {
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   const search = url === undefined ? '' : `?url=${encodeURIComponent(url)}`;
   // jsdom will not let location be assigned, so it is replaced outright.
@@ -34,7 +34,7 @@ async function mount(url, { containers = [], firefox = true, local = {} } = {}) 
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
       sendMessage: vi.fn(),
     },
-    storage: { sync: makeArea(), local: makeArea(local) },
+    storage: { sync: makeArea(sync), local: makeArea(local) },
     tabs: {
       create: vi.fn(async () => ({ id: 9 })),
       getCurrent: vi.fn(async () => ({ id: 1 })),
@@ -193,5 +193,48 @@ describe('what it admits to', () => {
   it('says there is nothing to choose when Firefox has no containers', async () => {
     await mount('https://example.com/', { containers: [] });
     expect($('note').textContent).toMatch(/no containers/i);
+  });
+});
+
+describe('the remember tick', () => {
+  const two = [
+    { cookieStoreId: WORK, name: 'Work', color: 'blue' },
+    { cookieStoreId: HOME, name: 'Home', color: 'green' },
+  ];
+
+  it('starts unticked when nothing has been configured', async () => {
+    // Ticked out of the box, one careless click silences a host for good and
+    // the extension quietly stops doing what it was installed for.
+    await mount('https://example.com/', { containers: two });
+    expect(document.getElementById('remember').checked).toBe(false);
+  });
+
+  it('starts ticked only because the settings page says so', async () => {
+    await mount('https://example.com/', {
+      containers: two,
+      sync: { settings: { rememberChoices: true } },
+    });
+    expect(document.getElementById('remember').checked).toBe(true);
+  });
+
+  it('does not turn itself into the default for every future link', async () => {
+    // It used to save itself on change, so ticking it once for ONE site quietly
+    // decided what happened to every link after it, with nothing saying so.
+    await mount('https://example.com/', { containers: two });
+    const box = document.getElementById('remember');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await settle(20);
+    expect(chrome.storage.sync.store.settings?.rememberChoices).not.toBe(true);
+  });
+
+  it('still remembers the host it was ticked for', async () => {
+    await mount('https://example.com/doc', { containers: two });
+    const box = document.getElementById('remember');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    choices()[0].click();
+    await settle(20);
+    expect(chrome.storage.sync.store.rules['example.com']).toMatchObject({ container: 'Work' });
   });
 });
