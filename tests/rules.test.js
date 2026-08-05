@@ -138,8 +138,8 @@ describe('what gets stored', () => {
 describe('the settings file', () => {
   it('survives a round trip', () => {
     const rules = { 'example.com': { container: 'Work', cookieStoreId: WORK.cookieStoreId } };
-    const out = fromTransfer(toTransfer({ neverAsk: ['a.test'], rememberChoices: true }, rules));
-    expect(out.settings).toEqual({ neverAsk: ['a.test'], rememberChoices: true });
+    const out = fromTransfer(toTransfer({ neverAsk: ['a.test'], rememberPrompt: 'ticked' }, rules));
+    expect(out.settings).toEqual({ neverAsk: ['a.test'], rememberPrompt: 'ticked' });
     expect(out.rules).toEqual(rules);
   });
 
@@ -158,6 +158,15 @@ describe('the settings file', () => {
     // one saying it is off.
     const out = fromTransfer({ format: FORMAT, version: 1, settings: { enabled: true } });
     expect(out.settings.enabled).toBeUndefined();
+  });
+
+  it('takes the default for a remember setting that is not one of the three', () => {
+    const out = fromTransfer({
+      format: FORMAT,
+      version: 1,
+      settings: { rememberPrompt: 'sometimes' },
+    });
+    expect(out.settings.rememberPrompt).toBe('unticked');
   });
 
   it('cleans the never-ask list it is handed', () => {

@@ -154,7 +154,7 @@ identical to a broken install, so the page says so in as many words.
   "version": 1,
   "settings": {
     "neverAsk": ["intranet.example", "mail.example"],
-    "rememberChoices": true
+    "rememberPrompt": "ticked"
   },
   "rules": {
     "docs.example.com": {

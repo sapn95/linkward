@@ -212,9 +212,21 @@ describe('the remember tick', () => {
   it('starts ticked only because the settings page says so', async () => {
     await mount('https://example.com/', {
       containers: two,
-      sync: { settings: { rememberChoices: true } },
+      sync: { settings: { rememberPrompt: 'ticked' } },
     });
     expect(document.getElementById('remember').checked).toBe(true);
+    expect(document.getElementById('remember-row').hidden).toBe(false);
+  });
+
+  it('is not on the page at all when it has been turned off', async () => {
+    // Hidden means hidden: nothing on this page can then pin a host by
+    // accident, which is the point of asking for it to be gone.
+    await mount('https://example.com/', {
+      containers: two,
+      sync: { settings: { rememberPrompt: 'hidden' } },
+    });
+    expect(document.getElementById('remember-row').hidden).toBe(true);
+    expect(document.getElementById('remember').checked).toBe(false);
   });
 
   it('does not turn itself into the default for every future link', async () => {
@@ -225,7 +237,7 @@ describe('the remember tick', () => {
     box.checked = true;
     box.dispatchEvent(new Event('change'));
     await settle(20);
-    expect(chrome.storage.sync.store.settings?.rememberChoices).not.toBe(true);
+    expect(chrome.storage.sync.store.settings?.rememberPrompt).not.toBe('ticked');
   });
 
   it('still remembers the host it was ticked for', async () => {

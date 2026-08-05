@@ -321,7 +321,7 @@ describe('the settings file, from the page', () => {
         JSON.stringify({
           format: 'linkward-settings',
           version: 1,
-          settings: { neverAsk: ['imported.test'], rememberChoices: true },
+          settings: { neverAsk: ['imported.test'], rememberPrompt: 'ticked' },
           rules: { 'b.test': { container: 'Work', cookieStoreId: 'firefox-container-2' } },
         }),
     };
@@ -330,7 +330,7 @@ describe('the settings file, from the page', () => {
     await settle(30);
     expect(stored2().rules['b.test'].container).toBe('Work');
     expect($('never').value).toBe('imported.test');
-    expect($('remember').checked).toBe(true);
+    expect($('remember-prompt').value).toBe('ticked');
   });
 
   it('says what was wrong with a file it cannot read, and changes nothing', async () => {

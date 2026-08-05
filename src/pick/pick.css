@@ -195,6 +195,24 @@ textarea {
   resize: vertical;
 }
 
+/* A labelled control on the settings page: the words above, the control under
+   them, so a select and a tick box line up down the same left edge. */
+.field {
+  display: block;
+  margin-top: 16px;
+}
+
+.field > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.field select {
+  width: 100%;
+  max-width: 340px;
+}
+
 .rules {
   list-style: none;
   margin: 0;

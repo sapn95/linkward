@@ -44,7 +44,11 @@ async function init() {
   hostEl.textContent = target.host;
 
   const settings = await getSettings().catch(() => ({}));
-  rememberEl.checked = Boolean(settings.rememberChoices);
+  // Hidden means hidden: the box is not rendered, so nothing on this page can
+  // pin a host by accident.
+  const prompt = settings.rememberPrompt ?? 'unticked';
+  document.getElementById('remember-row').hidden = prompt === 'hidden';
+  rememberEl.checked = prompt === 'ticked';
 
   const containers = await listContainers();
   containersHere = containers;
