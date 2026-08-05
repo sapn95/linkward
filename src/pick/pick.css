@@ -106,14 +106,18 @@ h1 {
 }
 
 .row {
-  display: flex;
-  flex-wrap: wrap;
+  /* A grid, not a flex row: three equal columns line the buttons up with the
+     full-width container list above them. Flex sized each one to its label, so
+     the block below the list was ragged where everything else was flush. */
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .row button {
-  padding: 8px 14px;
+  padding: 10px 14px;
+  text-align: center;
   font: inherit;
   color: var(--accent);
   background: none;
@@ -124,6 +128,21 @@ h1 {
 
 .row button.quiet {
   color: var(--muted);
+}
+
+/* What the buttons no longer have room to say. Once, under the row, rather
+   than three times inside it. */
+.row-note {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+/* Narrow windows: three columns of two words each stop being readable long
+   before the page does, so they stack rather than shrink. */
+@media (max-width: 420px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .check {
