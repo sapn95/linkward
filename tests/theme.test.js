@@ -66,3 +66,35 @@ describe('both pages use the one stylesheet', () => {
     expect(PICK).toContain('pick.css');
   });
 });
+
+describe('the row of actions', () => {
+  const HTML = readFileSync(join(process.cwd(), 'src/pick/pick.html'), 'utf8');
+
+  it('is three equal columns, so it lines up with the list above it', () => {
+    // Flex sized each button to its label, so the block under the container
+    // list was three different widths where everything else was flush.
+    expect(CSS).toMatch(/\.row \{[^}]*display: grid/s);
+    expect(CSS).toMatch(/\.row \{[^}]*grid-template-columns: repeat\(3, 1fr\)/s);
+  });
+
+  it('keeps the labels short enough not to wrap in a third of the width', () => {
+    // Equal columns only look equal while nothing inside them wraps.
+    const labels = [...HTML.matchAll(/<button id="(plain|copy|cancel)"[^>]*>([^<]+)</g)].map((m) =>
+      m[2].trim(),
+    );
+    expect(labels).toHaveLength(3);
+    for (const label of labels) {
+      expect(label.length).toBeLessThanOrEqual(14);
+      expect(label.split(' ').length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('says what the buttons no longer have room to say', () => {
+    // "Copy the link, open nothing" carried the important half in its label.
+    expect(HTML).toMatch(/Copying opens nothing/i);
+  });
+
+  it('stacks them rather than shrinking them on a narrow window', () => {
+    expect(CSS).toMatch(/@media \(max-width: 420px\)[^}]*\{[^@]*grid-template-columns: 1fr/s);
+  });
+});

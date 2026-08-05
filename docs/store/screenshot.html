@@ -134,12 +134,14 @@
         flex: none;
       }
       .row {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
         gap: 9px;
-        margin-bottom: 16px;
+        margin-bottom: 8px;
       }
       .row span {
-        padding: 9px 15px;
+        padding: 11px 15px;
+        text-align: center;
         border: 1px solid var(--border);
         border-radius: 6px;
         color: var(--accent);
@@ -148,6 +150,11 @@
       .row span.quiet {
         color: var(--muted);
       }
+      .row-note {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
       .check {
         display: flex;
         align-items: center;
@@ -155,12 +162,15 @@
         color: var(--muted);
         font-size: 14px;
       }
+      /* Unticked, because that is what a fresh install shows. A store
+         screenshot advertising a default the extension does not have is a
+         promise somebody notices the first time they use it. */
       .box {
         width: 15px;
         height: 15px;
         border: 1px solid var(--border);
         border-radius: 3px;
-        background: var(--accent);
+        background: var(--bg);
         position: relative;
       }
       .box::after {
@@ -209,10 +219,11 @@
             <li><span class="dot" style="background: #ff4bda"></span>Admin</li>
           </ul>
           <div class="row">
-            <span>Open without a container</span>
-            <span>Copy the link, open nothing</span>
-            <span class="quiet">Close this tab</span>
+            <span>No container</span>
+            <span>Copy link</span>
+            <span class="quiet">Close tab</span>
           </div>
+          <p class="row-note">Copying opens nothing.</p>
           <div class="check">
             <span class="box"></span> Remember this for
             <code>example.sharepoint.com</code>

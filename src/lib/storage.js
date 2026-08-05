@@ -3,6 +3,9 @@
 // means a different container on another machine.
 
 export const SETTINGS_KEY = 'settings';
+
+/** The three things the picker can do with its "remember this host" box. */
+export const REMEMBER_PROMPT = ['hidden', 'unticked', 'ticked'];
 const LOCAL_KEY = 'localSettings';
 const LOCAL_KEYS = ['lastContainer'];
 
@@ -12,12 +15,18 @@ export const DEFAULT_SETTINGS = {
   enabled: false,
   // Hosts never to ask about, matched on the host and its subdomains.
   neverAsk: [],
-  // Remember the choice per host and stop asking for it again. Off by default,
-  // and deliberately: ticked, one careless click on the picker silences a host
-  // for good, and the extension quietly stops doing the thing it was installed
-  // for. Someone who wants that can say so — the tick is right there, and it
-  // stays on once set.
-  rememberChoices: false,
+  // What the picker does with its "remember this host" box. Three states,
+  // because two cannot say it: a tick box can be on or off, but "do not put it
+  // there at all" is a third thing somebody may well want.
+  //
+  // 'unticked' by default. Ticked, one careless click silences a host for good
+  // and the extension quietly stops doing what it was installed for; hidden by
+  // default would hide a feature nobody would then find.
+  //
+  // This replaced a boolean, and the old value is deliberately NOT carried
+  // over: it was written by a default that has since been reversed, so for
+  // almost everyone holding `true` it records nothing anybody decided.
+  rememberPrompt: 'unticked',
   // The container picked last, offered first next time. Machine-local.
   lastContainer: '',
 };
@@ -43,11 +52,20 @@ export async function getSettings() {
   merged.neverAsk = Array.isArray(merged.neverAsk)
     ? merged.neverAsk.filter((v) => typeof v === 'string')
     : [];
+  // Off disk, so it can be anything — including the boolean this used to be.
+  if (!REMEMBER_PROMPT.includes(merged.rememberPrompt)) {
+    merged.rememberPrompt = DEFAULT_SETTINGS.rememberPrompt;
+  }
+  delete merged.rememberChoices;
   return merged;
 }
 
 export async function saveSettings(settings) {
   const merged = { ...DEFAULT_SETTINGS, ...settings };
+  if (!REMEMBER_PROMPT.includes(merged.rememberPrompt)) {
+    merged.rememberPrompt = DEFAULT_SETTINGS.rememberPrompt;
+  }
+  delete merged.rememberChoices;
   const synced = { ...merged };
   const here = {};
   for (const k of LOCAL_KEYS) {

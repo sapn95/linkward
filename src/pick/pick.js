@@ -44,7 +44,11 @@ async function init() {
   hostEl.textContent = target.host;
 
   const settings = await getSettings().catch(() => ({}));
-  rememberEl.checked = Boolean(settings.rememberChoices);
+  // Hidden means hidden: the box is not rendered, so nothing on this page can
+  // pin a host by accident.
+  const prompt = settings.rememberPrompt ?? 'unticked';
+  document.getElementById('remember-row').hidden = prompt === 'hidden';
+  rememberEl.checked = prompt === 'ticked';
 
   const containers = await listContainers();
   containersHere = containers;
@@ -66,9 +70,13 @@ async function init() {
   document.getElementById('plain').addEventListener('click', () => open(''));
   document.getElementById('copy').addEventListener('click', copyAndClose);
   document.getElementById('cancel').addEventListener('click', closeTab);
-  rememberEl.addEventListener('change', () =>
-    saveSettings({ ...settings, rememberChoices: rememberEl.checked }).catch(() => {}),
-  );
+  // The tick is NOT written back as a preference. It applies to this one link.
+  //
+  // It used to save itself, so ticking it once for a single site quietly turned
+  // it on for every link that followed — a box on a page about ONE address
+  // changing what happens to all the others, with nothing on screen saying so.
+  // Whether it starts ticked is a decision for the settings page, which is
+  // where a decision about every link belongs.
 }
 
 function renderContainers(containers, last) {

@@ -26,11 +26,25 @@ describe('settings', () => {
   });
 
   it('does not offer to silence a host until asked to', async () => {
-    // On the picker this is a tick box, and a ticked one turns a careless click
-    // into "never ask about this host again" — the extension quietly stopping
-    // the one thing it was installed for, with nobody having decided that.
-    expect(DEFAULT_SETTINGS.rememberChoices).toBe(false);
-    await expect(getSettings()).resolves.toMatchObject({ rememberChoices: false });
+    // On the picker this box turns a careless click into "never ask about this
+    // host again" — the extension quietly stopping the one thing it was
+    // installed for, with nobody having decided that.
+    expect(DEFAULT_SETTINGS.rememberPrompt).toBe('unticked');
+    await expect(getSettings()).resolves.toMatchObject({ rememberPrompt: 'unticked' });
+  });
+
+  it('drops the boolean this used to be, rather than reading it as a choice', async () => {
+    // `true` there was written by a default that has since been reversed, so
+    // for almost everybody holding it, it records nothing anyone decided.
+    await chrome.storage.sync.set({ settings: { rememberChoices: true } });
+    const settings = await getSettings();
+    expect(settings.rememberPrompt).toBe('unticked');
+    expect(settings.rememberChoices).toBeUndefined();
+  });
+
+  it('falls back to the default for a value that is not one of the three', async () => {
+    await chrome.storage.sync.set({ settings: { rememberPrompt: 'sometimes' } });
+    await expect(getSettings()).resolves.toMatchObject({ rememberPrompt: 'unticked' });
   });
 
   it('fills in the defaults', async () => {

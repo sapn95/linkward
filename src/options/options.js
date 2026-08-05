@@ -16,7 +16,7 @@ let containersHere = [];
 
 async function init() {
   const settings = await getSettings().catch(() => ({}));
-  $('remember').checked = Boolean(settings.rememberChoices);
+  $('remember-prompt').value = settings.rememberPrompt ?? 'unticked';
   $('never').value = (settings.neverAsk ?? []).join('\n');
   // Shown as what the BROWSER actually grants, not as what was stored: the
   // permission can be handed back in the browser's own add-on settings behind
@@ -25,7 +25,7 @@ async function init() {
   showSetupNotice();
 
   $('enabled').addEventListener('change', onToggle);
-  $('remember').addEventListener('change', save);
+  $('remember-prompt').addEventListener('change', save);
   $('never').addEventListener('change', save);
   $('export').addEventListener('click', exportSettings);
   $('import').addEventListener('click', () => $('import-file').click());
@@ -207,7 +207,7 @@ async function importSettings(e) {
     // grants on a click, and a file cannot click.
     await saveSettings({ ...settings, ...incoming.settings });
     await setRules(incoming.rules);
-    $('remember').checked = incoming.settings.rememberChoices;
+    $('remember-prompt').value = incoming.settings.rememberPrompt;
     $('never').value = incoming.settings.neverAsk.join('\n');
     await renderRules();
     const kept = Object.keys(incoming.rules).length;
@@ -226,7 +226,7 @@ async function save() {
   await saveSettings({
     ...settings,
     enabled: $('enabled').checked,
-    rememberChoices: $('remember').checked,
+    rememberPrompt: $('remember-prompt').value,
     neverAsk: $('never')
       .value.split('\n')
       .map((l) => l.trim())

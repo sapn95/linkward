@@ -17,13 +17,18 @@
 
       <ul id="choices" class="choices" aria-label="Containers"></ul>
 
+      <!-- Three equal columns, so the row lines up with the container list
+           above it instead of being three different widths. That only works
+           with labels short enough not to wrap: what each one does beyond its
+           label is on the line underneath, once, rather than inside a button. -->
       <div class="row">
-        <button id="plain" type="button">Open without a container</button>
-        <button id="copy" type="button">Copy the link, open nothing</button>
-        <button id="cancel" type="button" class="quiet">Close this tab</button>
+        <button id="plain" type="button">No container</button>
+        <button id="copy" type="button">Copy link</button>
+        <button id="cancel" type="button" class="quiet">Close tab</button>
       </div>
+      <p class="note row-note">Copying opens nothing.</p>
 
-      <label class="check">
+      <label id="remember-row" class="check" hidden>
         <input id="remember" type="checkbox" />
         Remember this for <span id="host" class="host"></span>
       </label>

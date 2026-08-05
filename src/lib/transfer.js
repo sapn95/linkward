@@ -5,7 +5,7 @@
 // the list of hosts this extension will stop asking about. So it is validated
 // field by field here, in a pure function, rather than trusted and merged.
 
-import { DEFAULT_SETTINGS, readRules } from './storage.js';
+import { DEFAULT_SETTINGS, REMEMBER_PROMPT, readRules } from './storage.js';
 
 export const FORMAT = 'linkward-settings';
 export const VERSION = 1;
@@ -17,7 +17,7 @@ export function toTransfer(settings, rules) {
     version: VERSION,
     settings: {
       neverAsk: [...(settings?.neverAsk ?? [])],
-      rememberChoices: Boolean(settings?.rememberChoices),
+      rememberPrompt: settings?.rememberPrompt ?? DEFAULT_SETTINGS.rememberPrompt,
     },
     rules: readRules(rules),
   };
@@ -52,10 +52,12 @@ export function fromTransfer(parsed) {
   return {
     settings: {
       neverAsk,
-      rememberChoices:
-        typeof incoming.rememberChoices === 'boolean'
-          ? incoming.rememberChoices
-          : DEFAULT_SETTINGS.rememberChoices,
+      // An unknown value is the default, not a refusal: a file from a newer
+      // linkward is already turned away by its version, so anything odd here is
+      // a typo somebody made by hand.
+      rememberPrompt: REMEMBER_PROMPT.includes(incoming.rememberPrompt)
+        ? incoming.rememberPrompt
+        : DEFAULT_SETTINGS.rememberPrompt,
     },
     rules: readRules(parsed.rules),
   };

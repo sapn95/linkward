@@ -32,9 +32,15 @@
         container. Switching it off hands the access back.
       </p>
 
-      <label class="check">
-        <input id="remember" type="checkbox" />
-        Offer to remember the choice per site
+      <label class="field">
+        <span>The "remember this host" box on the picker</span>
+        <!-- Three states, because two cannot say it: on, off, and not there at
+             all. A tick box could only ever offer the first two. -->
+        <select id="remember-prompt">
+          <option value="hidden">Do not show it</option>
+          <option value="unticked">Show it, unticked</option>
+          <option value="ticked">Show it, already ticked</option>
+        </select>
       </label>
 
       <h2>Never ask for</h2>
