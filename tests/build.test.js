@@ -58,4 +58,18 @@ describe('what each build asks the store to grant', () => {
     expect(firefox.browser_specific_settings.gecko.id).toBe('linkward@sapn95.github.io');
     expect(chrome.browser_specific_settings).toBeUndefined();
   });
+
+  it('names Android its own minimum, which is not the desktop one', () => {
+    // data_collection_permissions is required by AMO. Desktop understood it
+    // from 140, Android only from 142, and AMO warns about the mismatch on
+    // every single submission. Raising the desktop minimum to match would lock
+    // out desktop users on 140 and 141 for a key their browser already has.
+    const { gecko, gecko_android: android } = firefox.browser_specific_settings;
+    expect(gecko.data_collection_permissions).toEqual({ required: ['none'] });
+    expect(gecko.strict_min_version).toBe('140.0');
+    expect(android.strict_min_version).toBe('142.0');
+    expect(Number.parseFloat(android.strict_min_version)).toBeGreaterThan(
+      Number.parseFloat(gecko.strict_min_version),
+    );
+  });
 });

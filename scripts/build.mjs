@@ -37,6 +37,13 @@ if (firefox) {
       strict_min_version: '140.0',
       data_collection_permissions: { required: ['none'] },
     },
+    // Android reached the same key two releases later than desktop, and AMO
+    // warns about the mismatch on every submission. Its own minimum is the
+    // honest fix: raising the desktop one to 142 would lock out desktop users
+    // on 140 and 141 for a key their browser already understands.
+    gecko_android: {
+      strict_min_version: '142.0',
+    },
   };
   // Firefox holds the request itself, so it never reaches for webNavigation.
   manifest.optional_permissions = manifest.optional_permissions.filter(
