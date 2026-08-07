@@ -100,10 +100,10 @@ hiding them:
 
 - **Chrome MV3 removed blocking `webRequest`**, so linkward can only turn the
   tab around once the navigation has begun. The page may flash.
-- **No extension can open a tab in another Chrome profile.** The isolation is
-  enforced inside Chromium, not by convention. On Chrome, linkward can hand you
-  the link and nothing more — use Chrome's own right-click **"Open Link as
-  ‹Profile›"** on the original link, which has been there since Chrome 48.
+- **No extension can open a tab in another Chrome profile.** `tabs.create`
+  takes a window to aim at and no profile, because an extension in one profile
+  cannot see that the others exist. A profile can only be chosen before the
+  browser is handed the link — [what actually works](#chromium-profiles).
 
 Containers are a Firefox feature. The Chrome build ships without the
 container permissions at all.
@@ -228,12 +228,55 @@ node scripts/demo.mjs https://your.intranet/page
 
 ### Chromium profiles
 
-An extension cannot open a tab in another Chromium profile. That is enforced
-inside Chromium, and it is why the Chrome build offers no equivalent of
-containers — the picker says so on the page rather than hiding it.
+**No extension can open a tab in another Chromium profile.** Not linkward, not
+anything — this is worth stating plainly, because "not supported yet" would
+imply it is coming.
 
-The thing **handing the link over** can pick one, though, and that is the only
-place a profile can be chosen:
+`chrome.tabs.create` takes a **window** to aim at and nothing else; there is no
+profile parameter, and `chrome.windows.create` has none either. The reason is
+below the API: an extension installed in one profile cannot see that the others
+exist. Profiles are the isolation boundary, and extensions live inside one.
+
+The same holds in Vivaldi, and for its Workspaces — Vivaldi's own forum staff
+put per-workspace extension settings down to "Vivaldi/Chromium core
+restrictions", and routing a URL to a profile by rule is an open feature
+request, not an API.
+
+So a profile can only be chosen **before the browser is handed the link**, by
+whatever hands it over:
+
+| Route                                                                                                                           | What it costs                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Command line — `vivaldi --profile-directory="Profile 2" <url>`                                                                  | nothing; works today                                                                                                   |
+| An OS-level router — [Choosy](https://www.choosyosx.com), [BrowserOSaurus](https://github.com/will-stone/browserosaurus), Velja | a second app, set as the default browser                                                                               |
+| A native-messaging host                                                                                                         | a binary and a manifest per machine, installed outside the browser, and the kind of thing store reviewers read closely |
+
+#### "Can the browser not just call itself?"
+
+It can — and that is exactly what the first two routes do. The catch is that
+**an extension is not a process.** It is JavaScript in a sandbox with no way to
+start one, so every route to `vivaldi --profile-directory=…` runs through
+something registered with the operating system.
+
+The obvious shortcut is a custom URL scheme: register `linkward://` with the OS,
+have the picker navigate to it, let the OS launch the handler. It works, and it
+saves the native-messaging manifest — but **not the installer**. In both models
+the native application is installed by the OS's own machinery rather than by the
+browser, so a user still has to install something.
+
+And it would be worse to use. Chromium's list of schemes that may launch without
+asking is compiled in, not built from what is on the machine, so a custom scheme
+prompts **every single time**: linkward asks where the link should go, then
+Chromium asks whether it may open linkward. Two dialogs for one link. Only an
+enterprise policy (`AutoLaunchProtocolsFromOrigins`) removes the second, and
+that is not something an extension can ship.
+
+So linkward ships none of these on purpose. It is an extension that needs one
+switch and no installer — a native host would trade that for a feature only
+Chromium users could ever get, while Firefox already does the whole job inside
+the browser, with containers, and no helper at all.
+
+`scripts/demo.mjs` takes the first route:
 
 ```bash
 node scripts/demo.mjs --browser=Vivaldi --profile="Profile 1" https://example.com/
@@ -243,16 +286,54 @@ node scripts/demo.mjs --browser=Vivaldi --profile="Profile 1" https://example.co
 Profile directories are `Default`, `Profile 1`, `Profile 2`, … — the folder
 names under the browser's user-data directory, not the names shown in its UI.
 
-Two things follow from profiles being sealed off, and they surprise people:
+Two more things follow from profiles being sealed off, and they surprise people:
 
 - **Extensions are per profile.** linkward installed in one is not installed in
   the other; the second profile opens links exactly as it did before.
 - **Installing it in both does not let it move a link between them.** It only
-  means the question gets asked in whichever profile the link lands in. Copy the
-  link and paste it where you want it, or launch that profile directly as above.
+  means the question gets asked in whichever profile the link lands in.
+
+#### The container extensions for Chromium solve a different problem
+
+There are extensions that bring Firefox-style containers to Chromium —
+SessionBox, Cookie Profile Switcher, and several free imitations of Mozilla's
+Multi-Account Containers. They are real and some of them are good, but they are
+not an answer to the question on this page.
+
+What they give you is **isolated sessions inside one profile**: a per-tab cookie
+jar, swapped through the `cookies` API, so you can be signed in twice to the
+same site. What they cannot give you is **another profile**, because that is the
+boundary described above and no extension crosses it.
+
+The isolation is also thinner than Firefox's. Cookies and site storage are
+separated; the fingerprint, the IP and the browser build are not, so every
+session still looks like the same machine. Firefox containers have the same
+ceiling — neither changes your fingerprint — but they are implemented by the
+browser rather than reconstructed on top of it, and users report the extension
+kind losing sessions after a while.
+
+linkward does not do this and will not. Holding somebody's cookie jars is a
+different product with a different failure mode: when it goes wrong, you are
+silently signed in as the wrong person, which is precisely what this exists to
+prevent.
 
 Firefox has none of this trouble: containers live inside one profile, so the
 add-on really can open the link in the right one.
+
+### If Firefox has no containers yet
+
+Containers are **built into Firefox** — linkward reads them through
+`contextualIdentities` and needs nothing else. What Firefox does not give you is
+an obvious way to _make_ one, which is why almost everybody has
+[Multi-Account Containers](https://addons.mozilla.org/firefox/addon/multi-account-containers/),
+Mozilla's own add-on, installed to create, name and colour them.
+
+linkward does not depend on it and does not talk to it. It lists whatever
+containers exist, whoever made them, and there is no setting connecting the two.
+Install it, make the containers you want, and they appear in the picker.
+
+The picker says as much when it finds none, rather than reporting an empty list
+and leaving you to work out why.
 
 ## Development
 

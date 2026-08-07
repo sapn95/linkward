@@ -184,15 +184,26 @@ describe('choosing', () => {
 });
 
 describe('what it admits to', () => {
-  it('tells a Chrome user what Chrome cannot do', async () => {
+  it('tells a Chromium user what cannot be done, and why', async () => {
+    // "Not supported yet" would be a promise. This is a wall, and the reason
+    // fits in a sentence: an extension in one profile cannot see the others.
     await mount('https://example.com/', { firefox: false });
     expect($('note').hidden).toBe(false);
-    expect($('note').textContent).toMatch(/cannot open/i);
+    expect($('note').textContent).toMatch(/seals each profile off/i);
+    expect($('note').textContent).toMatch(/settled before the browser is handed it/i);
+    // And it does not leave them with nothing to do about it.
+    expect($('note').textContent).toMatch(/copy the link|outside the browser/i);
   });
 
-  it('says there is nothing to choose when Firefox has no containers', async () => {
+  it('points a Firefox user at how to get containers, rather than stopping', async () => {
+    // "There is nothing to choose between" is true and useless. Containers are
+    // built into Firefox, but making one without Mozilla's add-on is not
+    // obvious, so the page names it.
     await mount('https://example.com/', { containers: [] });
-    expect($('note').textContent).toMatch(/no containers/i);
+    expect($('note').textContent).toMatch(/built in, but none have been made/i);
+    expect($('note').textContent).toMatch(/Multi-Account Containers/);
+    // And says the two need no wiring together, which is the next question.
+    expect($('note').textContent).toMatch(/no setting to connect the two/i);
   });
 });
 

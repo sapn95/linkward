@@ -57,3 +57,85 @@ describe('the diagrams', () => {
     expect(README.match(/```mermaid/g) ?? []).toHaveLength(3);
   });
 });
+
+describe('what the README claims about Chromium profiles', () => {
+  // Whitespace-normalised: Markdown wraps at 80 columns, so a sentence to be
+  // matched is regularly split across two lines.
+  const section = README.slice(README.indexOf('### Chromium profiles')).replace(/\s+/g, ' ');
+
+  it('states the limit as a wall, not as something that is coming', () => {
+    // "Not supported yet" would be a promise nobody can keep: the boundary is
+    // below the API, not a gap in it.
+    expect(section).toMatch(/No extension can open a tab in another Chromium profile/);
+    // And it says why that phrasing was chosen, rather than leaving the reader
+    // to wonder whether this is a gap somebody is working on.
+    expect(section).toMatch(/would imply it is coming/i);
+  });
+
+  it('gives the reason, so the claim can be checked rather than believed', () => {
+    expect(section).toMatch(/chrome\.tabs\.create/);
+    expect(section).toMatch(/no profile parameter/i);
+  });
+
+  it('says what does work instead, with its price', () => {
+    for (const route of ['--profile-directory', 'native-messaging host', 'Choosy']) {
+      expect(section).toContain(route);
+    }
+  });
+
+  it('answers the question everyone asks: can the browser not call itself?', () => {
+    // It can. The reason that does not help is specific, and losing it means
+    // relitigating this every time somebody has the same good idea.
+    expect(section).toMatch(/an extension is not a process/i);
+    expect(section).toMatch(/custom URL scheme/i);
+    // The two facts that kill the shortcut: it still needs an installer, and
+    // Chromium prompts every time because the scheme list is compiled in.
+    expect(section).toMatch(/not the installer/i);
+    expect(section).toMatch(/prompts \*\*every single time\*\*|every single time/i);
+    expect(section).toMatch(/AutoLaunchProtocolsFromOrigins/);
+  });
+
+  it('says why linkward ships none of them', () => {
+    // A native host would trade the one thing this extension has — nothing to
+    // install — for a feature only half its users could ever get.
+    expect(section).toMatch(/ships none of these on purpose/i);
+  });
+});
+
+describe('what the README says about container extensions', () => {
+  const section = README.slice(README.indexOf('### Chromium profiles')).replace(/\s+/g, ' ');
+
+  it('separates them from the profile question rather than lumping them in', () => {
+    // People arrive looking for one and find the other. Saying "there is
+    // nothing" would be wrong; saying "use one of those" would be wronger.
+    expect(section).toMatch(/isolated sessions inside one profile/i);
+    expect(section).toMatch(/cannot give you is \*{0,2}another profile/i);
+  });
+
+  it('names them, and is fair about what they do and do not isolate', () => {
+    expect(section).toMatch(/SessionBox/);
+    expect(section).toMatch(/fingerprint/i);
+    // Firefox's own containers share that ceiling; not saying so would be
+    // selling our side of it.
+    expect(section).toMatch(/Firefox containers have the same ceiling/i);
+  });
+
+  it('says why linkward will not become one', () => {
+    expect(section).toMatch(/does not do this and will not/i);
+  });
+});
+
+describe('the Firefox side of the same question', () => {
+  const section = README.slice(README.indexOf('### If Firefox has no containers yet')).replace(
+    /\s+/g,
+    ' ',
+  );
+
+  it('names the add-on people actually need, without claiming to need it', () => {
+    // Containers are built in; making one is not. Not naming Multi-Account
+    // Containers leaves an empty picker and no idea why.
+    expect(section).toMatch(/built into Firefox/i);
+    expect(section).toMatch(/Multi-Account Containers/);
+    expect(section).toMatch(/does not depend on it and does not talk to it/i);
+  });
+});
