@@ -226,6 +226,34 @@ node scripts/demo.mjs --browser=Firefox  # ignore the default browser
 node scripts/demo.mjs https://your.intranet/page
 ```
 
+### Chromium profiles
+
+An extension cannot open a tab in another Chromium profile. That is enforced
+inside Chromium, and it is why the Chrome build offers no equivalent of
+containers — the picker says so on the page rather than hiding it.
+
+The thing **handing the link over** can pick one, though, and that is the only
+place a profile can be chosen:
+
+```bash
+node scripts/demo.mjs --browser=Vivaldi --profile="Profile 1" https://example.com/
+# which is:  open -a Vivaldi -n --args --profile-directory="Profile 1" <url>
+```
+
+Profile directories are `Default`, `Profile 1`, `Profile 2`, … — the folder
+names under the browser's user-data directory, not the names shown in its UI.
+
+Two things follow from profiles being sealed off, and they surprise people:
+
+- **Extensions are per profile.** linkward installed in one is not installed in
+  the other; the second profile opens links exactly as it did before.
+- **Installing it in both does not let it move a link between them.** It only
+  means the question gets asked in whichever profile the link lands in. Copy the
+  link and paste it where you want it, or launch that profile directly as above.
+
+Firefox has none of this trouble: containers live inside one profile, so the
+add-on really can open the link in the right one.
+
 ## Development
 
 ```bash
