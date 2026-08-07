@@ -16,9 +16,6 @@
 // the failure that would make people uninstall — so every rule below errs
 // towards NOT asking.
 
-/** Firefox/Chrome hand these to a new tab before anything is loaded. */
-const BLANK_PAGES = new Set(['about:blank', 'about:newtab', 'about:home', 'chrome://newtab/']);
-
 /** Only ordinary web pages. A file:// or moz-extension:// page is not ours. */
 export function isInterceptable(url) {
   try {
@@ -40,11 +37,23 @@ export function isCandidateTab(tab, { openedByUs = false } = {}) {
   // An opener means a page or a script in this browser opened it: a target
   // _blank link, a window.open, a middle click. Not external.
   if (tab?.openerTabId !== undefined && tab?.openerTabId !== null) return false;
-  // A tab that starts on a real URL was handed one; a blank one is the user
-  // opening an empty tab and typing into it. Both reach us, only the first can
-  // be external.
-  const url = tab?.url ?? '';
-  if (url && BLANK_PAGES.has(url)) return false;
+
+  // A tab that was HANDED a link starts on that link — an http(s) address.
+  // Anything else with a name is one of the browser's own pages: a new tab, a
+  // start page, a session-restore placeholder. The user is about to type in it,
+  // and what they type is not an external link.
+  //
+  // This used to be a list of four names — about:blank, about:newtab,
+  // about:home, chrome://newtab/ — which is the wrong way round. Every browser
+  // has its own, Vivaldi's start page is not among them, and the consequence
+  // was linkward interrupting a search typed into the address bar of a fresh
+  // tab. Asking about something the user typed themselves is the failure that
+  // gets an add-on uninstalled.
+  //
+  // An EMPTY url stays a candidate: it means the browser has not said yet, not
+  // that there is nothing.
+  const url = tab?.pendingUrl || tab?.url || '';
+  if (url && !isInterceptable(url)) return false;
   return true;
 }
 

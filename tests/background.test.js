@@ -13,6 +13,8 @@ function makeEvent() {
     hasListener: (fn) => fns.includes(fn),
     /** How many listeners are on it — "any at all" is the question that matters. */
     size: () => fns.length,
+    /** Synchronous, for onMessage: the reply comes through sendResponse. */
+    emitSync: (...args) => fns.map((fn) => fn(...args)),
     emit: async (...args) => {
       const out = [];
       for (const fn of fns) out.push(await fn(...args));
@@ -537,5 +539,90 @@ describe('two remembered links arriving at once', () => {
     held[1].go();
     await settle(20);
     expect(await ask(c, { tabId: 101, url: held[1].url })).toEqual({});
+  });
+});
+
+describe('two pages changing the remembered hosts at once', () => {
+  /** What a page sends; the background is the only thing that writes. */
+  const ask = (c, msg) =>
+    new Promise((resolve) => {
+      const [answer] = c.runtime.onMessage.emitSync(msg, {}, resolve);
+      return answer;
+    });
+
+  it('does not lose a host when the picker and the settings page overlap', async () => {
+    // Every change is read-modify-write over one object. Without a single
+    // writer, the later write lands on a map read before the earlier one, and
+    // a host somebody pinned a second ago is gone — silently, which is the
+    // worst way for this particular thing to fail.
+    const c = await boot();
+    await Promise.all([
+      ask(c, { type: 'linkward:rules:set', host: 'a.test', rule: { container: 'Work' } }),
+      ask(c, { type: 'linkward:rules:set', host: 'b.test', rule: { container: 'Home' } }),
+      ask(c, { type: 'linkward:rules:set', host: 'c.test', rule: { container: 'Work' } }),
+    ]);
+    expect(Object.keys(c.storage.sync.store.rules).sort()).toEqual(['a.test', 'b.test', 'c.test']);
+  });
+
+  it('keeps serving the next write after one of them fails', async () => {
+    // A rejection left on the chain would make every later write reject with
+    // somebody else's error, which is a worse bug than the one being fixed.
+    const c = await boot();
+    const real = c.storage.sync.set;
+    let first = true;
+    c.storage.sync.set = async (o) => {
+      if (first) {
+        first = false;
+        throw new Error('quota exceeded');
+      }
+      return real(o);
+    };
+    const failed = await ask(c, {
+      type: 'linkward:rules:set',
+      host: 'a.test',
+      rule: { container: 'Work' },
+    });
+    expect(failed.error).toMatch(/quota exceeded/);
+    const ok = await ask(c, {
+      type: 'linkward:rules:set',
+      host: 'b.test',
+      rule: { container: 'Home' },
+    });
+    expect(ok.error).toBeUndefined();
+    expect(Object.keys(ok.rules)).toEqual(['b.test']);
+  });
+
+  it('tells the page the reason instead of answering nothing', async () => {
+    // Without keeping the message channel open the caller gets undefined and
+    // reports success over a write that may never have happened.
+    const c = await boot();
+    const answer = await ask(c, { type: 'linkward:rules:set', host: '', rule: null });
+    expect(answer).toBeDefined();
+  });
+
+  it('leaves messages that are not about rules to the other listener', async () => {
+    const c = await boot();
+    await c.runtime.onMessage.emit({ type: 'linkward:opened', tabId: 7 });
+    expect(c.storage.sync.store.rules).toBeUndefined();
+  });
+});
+
+describe('typing in the address bar', () => {
+  it('is not interrupted, whatever the browser calls its own new tab', async () => {
+    // Reported from Vivaldi: open a tab, type a search, and linkward asked
+    // where "it" should open. The tab was a candidate because Vivaldi's start
+    // page was not on a hard-coded list of four names.
+    for (const url of ['chrome://vivaldi-webui/startpage', 'about:newtab', 'edge://newtab/']) {
+      const c = await boot();
+      await c.tabs.onCreated.emit({ id: 7, url });
+      expect(await ask(c, { url: 'https://duckduckgo.com/?q=linkward' })).toEqual({});
+    }
+  });
+
+  it('still asks about a tab that arrived carrying a link', async () => {
+    const c = await boot();
+    await c.tabs.onCreated.emit({ id: 7, url: 'https://example.com/doc' });
+    const answer = await ask(c, {});
+    expect(answer.redirectUrl).toContain('pick/pick.html');
   });
 });

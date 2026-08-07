@@ -47,6 +47,33 @@ The one that matters most is "the container is gone or renamed": a remembered
 rule that cannot be resolved on this machine **asks** rather than guessing,
 because opening the wrong identity is the failure this exists to prevent.
 
+## The keyboard
+
+The picker interrupts something, and it is seen many times a day, so it does not
+insist on the mouse:
+
+| Key     |                                                                               |
+| ------- | ----------------------------------------------------------------------------- |
+| `1`–`9` | open in the nth container                                                     |
+| `Enter` | the one offered first — the container used last, or plainly if there are none |
+| `c`     | copy the link, open nothing                                                   |
+| `Esc`   | close the tab                                                                 |
+
+Anything with ⌘, Ctrl or Alt held is left alone: those belong to the browser,
+and taking ⌘C from somebody copying the address off the page would be its own
+small betrayal.
+
+## Why it asked
+
+The page says how long ago the tab appeared and what it could not account for:
+
+> Asked because this tab was opened 2.4s ago and nothing in the browser accounts
+> for it — no page opened it, and you had not been browsing in it.
+
+This is not decoration. The detection is a process of **exclusion**, so when it
+gets one wrong there has to be something to point at — for whoever was
+interrupted, and for whoever they report it to.
+
 ## The honest part, up front
 
 **Firefox does not tell an extension that a link came from another
@@ -58,8 +85,9 @@ has been open since 2022.
 
 So linkward does not detect external links. It **excludes** everything it can
 positively identify as something else — a tab with an opener, a navigation a
-document started, a tab you have already been browsing in — and asks about what
-is left. Every rule errs towards **not** asking, because interrupting a link you
+document started, a tab you have already been browsing in, and a tab that
+started on one of the browser's own pages rather than on a link — and asks about
+what is left. Every rule errs towards **not** asking, because interrupting a link you
 clicked yourself is the failure that gets an add-on uninstalled.
 
 The rules are one small, pure file — [`src/lib/candidates.js`](src/lib/candidates.js)
@@ -311,6 +339,17 @@ session still looks like the same machine. Firefox containers have the same
 ceiling — neither changes your fingerprint — but they are implemented by the
 browser rather than reconstructed on top of it, and users report the extension
 kind losing sessions after a while.
+
+If you use one, the two get along by staying out of each other's way: put the
+hosts it manages on **the never-ask list**, and linkward never reaches them.
+There is nothing to wire up and no setting connecting them — those hosts simply
+never become a question.
+
+That is the whole of the interoperability, and deliberately so. SessionBox has
+no `externally_connectable` surface and no deep-link scheme; its own support
+pages say the extension has no API. The one supported route is an npm toolkit
+driven by an API key from a local Node process — the helper-process cost again,
+with a third party and a key on top.
 
 linkward does not do this and will not. Holding somebody's cookie jars is a
 different product with a different failure mode: when it goes wrong, you are

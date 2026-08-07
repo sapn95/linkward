@@ -139,3 +139,42 @@ describe('the Firefox side of the same question', () => {
     expect(section).toMatch(/does not depend on it and does not talk to it/i);
   });
 });
+
+describe('how the README says linkward relates to container extensions', () => {
+  const section = README.slice(README.indexOf('### Chromium profiles')).replace(/\s+/g, ' ');
+
+  it('offers the never-ask list rather than an integration', () => {
+    // It is the only honest interop story: nothing is wired, so nothing can
+    // break, and the hosts somebody else manages simply never come up.
+    expect(section).toMatch(/put the hosts it manages on \*\*the never-ask list\*\*/i);
+    expect(section).toMatch(/nothing to wire up/i);
+  });
+
+  it('does not claim support that was never built or tested', () => {
+    // "Supported" would promise something nobody has checked.
+    expect(section).not.toMatch(/we support SessionBox|officially supported/i);
+    expect(section).toMatch(/no `externally_connectable` surface/i);
+  });
+});
+
+describe('the keyboard, as documented', () => {
+  const section = README.slice(
+    README.indexOf('## The keyboard'),
+    README.indexOf('## Why it asked'),
+  );
+
+  it('lists every key the picker actually handles', async () => {
+    // A shortcut table that has drifted is worse than none: somebody presses
+    // the key, nothing happens, and they stop trusting the rest of the page.
+    const source = readFileSync(join(process.cwd(), 'src/pick/pick.js'), 'utf8');
+    for (const key of ['Enter', 'Escape']) expect(source).toContain(`case '${key}'`);
+    expect(section).toMatch(/`1`–`9`/);
+    expect(section).toMatch(/`Enter`/);
+    expect(section).toMatch(/`c`/);
+    expect(section).toMatch(/`Esc`/);
+  });
+
+  it('says that modifiers are left to the browser', () => {
+    expect(section).toMatch(/⌘, Ctrl or Alt held is left alone/i);
+  });
+});

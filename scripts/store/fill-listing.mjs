@@ -50,7 +50,10 @@ step('icon 128×128');
 await files.nth(0).setInputFiles('dist/icons/icon-128.png');
 await page.waitForTimeout(3000);
 step('screenshot 1280×800');
-await files.nth(1).setInputFiles('docs/store/01-picker.png');
+// The CHROME picture, not the Firefox one: that shows three containers, and
+// putting it on this listing advertises a feature nobody who installs from here
+// can have.
+await files.nth(1).setInputFiles('docs/store/01-picker-chrome.png');
 await page.waitForTimeout(4000);
 
 step('homepage and support URLs');
