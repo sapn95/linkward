@@ -250,3 +250,24 @@ describe('the remember tick', () => {
     expect(chrome.storage.sync.store.rules['example.com']).toMatchObject({ container: 'Work' });
   });
 });
+
+describe('the words each browser gets', () => {
+  it('does not offer Chromium the absence of a thing it never had', async () => {
+    // "No container" is Firefox's word. On Chromium the unit is a PROFILE, and
+    // no extension can open a tab in one it is not already in — so a button
+    // named after containers reads as a feature that is missing.
+    await mount('https://example.com/', { firefox: false });
+    expect(document.getElementById('plain').textContent).toBe('Open it');
+    expect(document.getElementById('title').textContent).toBe('Open this link?');
+    expect(document.body.textContent).not.toMatch(/container/i);
+  });
+
+  it('keeps the container wording on Firefox, where it means something', async () => {
+    await mount('https://example.com/', {
+      firefox: true,
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+    });
+    expect(document.getElementById('plain').textContent).toBe('No container');
+    expect(document.getElementById('title').textContent).toBe('Where should this open?');
+  });
+});

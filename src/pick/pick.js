@@ -52,6 +52,14 @@ async function init() {
 
   const containers = await listContainers();
   containersHere = containers;
+  // Chromium wording. "No container" is Firefox's word for a thing Chromium
+  // does not have — there the unit is a PROFILE, and no extension can open a
+  // tab in one it is not already in. A button offering the absence of
+  // something that was never on offer reads as a missing feature.
+  if (!isFirefox()) {
+    document.getElementById('title').textContent = 'Open this link?';
+    document.getElementById('plain').textContent = 'Open it';
+  }
   if (containers.length > 0) {
     renderContainers(containers, settings.lastContainer);
   } else if (isFirefox()) {
