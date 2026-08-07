@@ -432,3 +432,72 @@ describe('when the settings cannot be read', () => {
     expect(stored()?.enabled).toBe(true);
   });
 });
+
+describe('the corners of the settings page', () => {
+  it('opens the file chooser from the Import button', async () => {
+    // The visible button is not the file input: the real one is hidden because
+    // a bare file input cannot be styled, so the click has to be forwarded.
+    await mount({ granted: true });
+    const opened = vi.fn();
+    $('import-file').click = opened;
+    $('import').click();
+    await settle();
+    expect(opened).toHaveBeenCalled();
+  });
+
+  it('names a container-less rule that has an id nobody recognises', async () => {
+    // Written before names were stored, on a machine that is not this one.
+    await mount({
+      granted: true,
+      rules: { 'old.test': { container: null, cookieStoreId: 'firefox-container-88' } },
+      containers: [WORK],
+    });
+    const select = rowFor('old.test').querySelector('select');
+    expect(select.value).toBe('__missing__');
+    expect(select.selectedOptions[0].textContent).toMatch(/unknown container/i);
+  });
+
+  it('shows a rule for a container that has no colour we know', async () => {
+    // Firefox renames colours between releases; an unknown one gets no dot
+    // rather than a wrong one, and the container is still named in words.
+    await mount({
+      granted: true,
+      rules: { 'a.test': { container: 'Odd' } },
+      containers: [{ cookieStoreId: 'firefox-container-9', name: 'Odd', color: 'chartreuse' }],
+    });
+    expect(rowFor('a.test').querySelector('.dot').style.background).toBe('');
+    expect(rowFor('a.test').querySelector('select').value).toBe('firefox-container-9');
+  });
+
+  it('comes up even when the settings cannot be read at all', async () => {
+    // A page that throws on load leaves somebody with no way to switch the
+    // thing off, which is worse than a page with the defaults in it.
+    await mount({ granted: true });
+    globalThis.chrome.storage.sync.get = async () => {
+      throw new Error('storage is unavailable');
+    };
+    await mountAgain();
+    expect($('never').value).toBe('');
+    expect($('rules-empty').hidden).toBe(false);
+  });
+
+  it('reports a failure that is not an Error object', async () => {
+    // Extension APIs reject with plain strings often enough that `err.message`
+    // alone prints "undefined" where the reason should be.
+    await mount({ granted: true, rules: { 'a.test': { container: 'Work' } }, containers: [WORK] });
+    globalThis.chrome.storage.sync.set = async () => {
+      throw 'nope, full disk';
+    };
+    rowFor('a.test').querySelector('button').click();
+    await settle(30);
+    expect($('status').textContent).toMatch(/nope, full disk/);
+  });
+});
+
+/** Re-run the page against the chrome object already in place. */
+async function mountAgain() {
+  document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
+  vi.resetModules();
+  await import('../src/options/options.js');
+  await settle(20);
+}

@@ -184,15 +184,26 @@ describe('choosing', () => {
 });
 
 describe('what it admits to', () => {
-  it('tells a Chrome user what Chrome cannot do', async () => {
+  it('tells a Chromium user what cannot be done, and why', async () => {
+    // "Not supported yet" would be a promise. This is a wall, and the reason
+    // fits in a sentence: an extension in one profile cannot see the others.
     await mount('https://example.com/', { firefox: false });
     expect($('note').hidden).toBe(false);
-    expect($('note').textContent).toMatch(/cannot open/i);
+    expect($('note').textContent).toMatch(/seals each profile off/i);
+    expect($('note').textContent).toMatch(/settled before the browser is handed it/i);
+    // And it does not leave them with nothing to do about it.
+    expect($('note').textContent).toMatch(/copy the link|outside the browser/i);
   });
 
-  it('says there is nothing to choose when Firefox has no containers', async () => {
+  it('points a Firefox user at how to get containers, rather than stopping', async () => {
+    // "There is nothing to choose between" is true and useless. Containers are
+    // built into Firefox, but making one without Mozilla's add-on is not
+    // obvious, so the page names it.
     await mount('https://example.com/', { containers: [] });
-    expect($('note').textContent).toMatch(/no containers/i);
+    expect($('note').textContent).toMatch(/built in, but none have been made/i);
+    expect($('note').textContent).toMatch(/Multi-Account Containers/);
+    // And says the two need no wiring together, which is the next question.
+    expect($('note').textContent).toMatch(/no setting to connect the two/i);
   });
 });
 
@@ -248,5 +259,64 @@ describe('the remember tick', () => {
     choices()[0].click();
     await settle(20);
     expect(chrome.storage.sync.store.rules['example.com']).toMatchObject({ container: 'Work' });
+  });
+});
+
+describe('the words each browser gets', () => {
+  it('does not offer Chromium the absence of a thing it never had', async () => {
+    // "No container" is Firefox's word. On Chromium the unit is a PROFILE, and
+    // no extension can open a tab in one it is not already in — so a button
+    // named after containers reads as a feature that is missing.
+    await mount('https://example.com/', { firefox: false });
+    expect(document.getElementById('plain').textContent).toBe('Open it');
+    expect(document.getElementById('title').textContent).toBe('Open this link?');
+    expect(document.body.textContent).not.toMatch(/container/i);
+  });
+
+  it('keeps the container wording on Firefox, where it means something', async () => {
+    await mount('https://example.com/', {
+      firefox: true,
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+    });
+    expect(document.getElementById('plain').textContent).toBe('No container');
+    expect(document.getElementById('title').textContent).toBe('Where should this open?');
+  });
+});
+
+describe('when the wording is decided', () => {
+  it('is Chromium wording before anything is awaited, not after', async () => {
+    // isFirefox() is synchronous; settings and containers are not. Deciding
+    // after them paints "Where should this open?" and "No container" on a
+    // Chromium screen for as long as storage takes — the very words this build
+    // exists to stop showing, arriving as a flicker instead.
+    document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
+    delete globalThis.location;
+    globalThis.location = new URL(
+      `https://ext/pick.html?url=${encodeURIComponent('https://a.test/')}`,
+    );
+    let releaseSettings;
+    globalThis.chrome = {
+      runtime: { getURL: (p) => `chrome-extension://linkward/${p}`, sendMessage: vi.fn() },
+      storage: {
+        // Never settles until the test lets it.
+        sync: { get: () => new Promise((r) => (releaseSettings = r)), set: async () => {} },
+        local: { get: async () => ({}), set: async () => {} },
+      },
+      tabs: { create: vi.fn(), getCurrent: vi.fn(async () => ({ id: 1 })), remove: vi.fn() },
+    };
+    globalThis.browser = undefined;
+    vi.resetModules();
+    const loading = import('../src/pick/pick.js');
+    // Enough for the module to evaluate and init() to reach its first await —
+    // and no further, because the settings promise above never resolves. What
+    // is on screen at this point is what a real user sees while storage is
+    // still being read.
+    await settle(60);
+
+    expect(document.getElementById('plain').textContent).toBe('Open it');
+    expect(document.getElementById('title').textContent).toBe('Open this link?');
+
+    releaseSettings({});
+    await loading;
   });
 });

@@ -5,6 +5,7 @@
 //   node scripts/demo.mjs                 one link, the plain case
 //   node scripts/demo.mjs --all           the whole tour, one link at a time
 //   node scripts/demo.mjs --browser=Safari
+//   node scripts/demo.mjs --browser=Vivaldi --profile="Profile 1"
 //   node scripts/demo.mjs https://intranet.example/page
 //
 // It uses the operating system's "open this link" hand-off — the same path a
@@ -20,6 +21,11 @@ const run = promisify(execFile);
 
 const args = process.argv.slice(2);
 const browser = args.find((a) => a.startsWith('--browser='))?.slice('--browser='.length);
+// A Chromium profile directory ("Default", "Profile 1", …). This is the ONLY
+// place a profile can be chosen: Chromium seals them off from extensions, so
+// linkward itself can never move a link between them — but the thing handing
+// the link over can pick one, and that is worth being able to demonstrate.
+const profile = args.find((a) => a.startsWith('--profile='))?.slice('--profile='.length);
 const custom = args.filter((a) => !a.startsWith('--'));
 
 // Each one shows a different answer the picker can give.
@@ -45,14 +51,20 @@ const TOUR = [
 /** The OS hand-off. Anything else would be a click, and clicks are not ours. */
 async function fire(url) {
   const os = platform();
+  // --args passes what follows to the browser itself, so it must come last and
+  // the URL must come after it, not before.
+  const chromiumProfile = profile ? ['--args', `--profile-directory=${profile}`, url] : [];
   if (os === 'darwin') {
-    await run('open', browser ? ['-a', browser, url] : [url]);
+    if (browser && profile) await run('open', ['-a', browser, '-n', ...chromiumProfile]);
+    else await run('open', browser ? ['-a', browser, url] : [url]);
   } else if (os === 'win32') {
     // Not `cmd /c start`: cmd re-parses its arguments, so `&` in a URL becomes
     // a command separator and anything after it is run. rundll32 hands the URL
     // to the registered handler with no shell in between.
-    if (browser) await run(browser, [url]);
+    if (browser) await run(browser, profile ? [`--profile-directory=${profile}`, url] : [url]);
     else await run('rundll32', ['url.dll,FileProtocolHandler', url]);
+  } else if (browser && profile) {
+    await run(browser, [`--profile-directory=${profile}`, url]);
   } else {
     // xdg-open cannot be told which browser to use, so name the command itself.
     await run(browser ?? 'xdg-open', [url]);

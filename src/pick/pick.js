@@ -43,6 +43,16 @@ async function init() {
   urlEl.textContent = target.toString();
   hostEl.textContent = target.host;
 
+  // Before the first await, and that is the point: isFirefox() is synchronous,
+  // while settings and containers are not. Deciding the wording after them
+  // paints "Where should this open?" and "No container" on a Chromium screen
+  // for as long as storage takes — the exact words this build exists to stop
+  // showing, arriving as a flicker instead.
+  if (!isFirefox()) {
+    document.getElementById('title').textContent = 'Open this link?';
+    document.getElementById('plain').textContent = 'Open it';
+  }
+
   const settings = await getSettings().catch(() => ({}));
   // Hidden means hidden: the box is not rendered, so nothing on this page can
   // pin a host by accident.
@@ -55,15 +65,26 @@ async function init() {
   if (containers.length > 0) {
     renderContainers(containers, settings.lastContainer);
   } else if (isFirefox()) {
-    note('This browser has no containers, so there is nothing to choose between.');
-  } else {
-    // Chrome. Being straight about it is the only honest option: no extension
-    // can open a tab in another Chrome profile — the isolation is enforced in
-    // Chromium itself — so linkward can hand you the link and nothing more.
+    // A dead end otherwise: "there is nothing to choose between" is true and
+    // useless. Containers are built into Firefox but there is no obvious way to
+    // make one without Mozilla's own add-on, so name it — linkward will use
+    // whatever it creates, and does not need to be told about it.
     note(
-      'Chrome keeps each profile sealed off from extensions, so linkward cannot open ' +
-        'this in another one. Copy the link and paste it into the profile you want, or ' +
-        'use Chrome’s own right-click “Open Link as…” on the original link.',
+      'Firefox has containers built in, but none have been made yet. Mozilla’s ' +
+        '“Multi-Account Containers” add-on is the usual way to create and name them; ' +
+        'linkward picks up whatever is there, with no setting to connect the two.',
+    );
+  } else {
+    // Chromium. Being straight about it is the only honest option, and saying
+    // WHY costs one sentence: `tabs.create` takes a window to aim at and no
+    // profile, because an extension in one profile cannot see that the others
+    // exist. "Not supported yet" would be a promise; this is a wall.
+    note(
+      'Chromium seals each profile off from extensions, so linkward can only reach this ' +
+        'one — which profile a link opens in is settled before the browser is handed it. ' +
+        'Copy the link and paste it where you want it, use the right-click “Open Link ' +
+        'as…” on the original, or let something outside the browser route it. The README ' +
+        'lists what actually works.',
     );
   }
 
