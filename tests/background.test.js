@@ -606,3 +606,23 @@ describe('two pages changing the remembered hosts at once', () => {
     expect(c.storage.sync.store.rules).toBeUndefined();
   });
 });
+
+describe('typing in the address bar', () => {
+  it('is not interrupted, whatever the browser calls its own new tab', async () => {
+    // Reported from Vivaldi: open a tab, type a search, and linkward asked
+    // where "it" should open. The tab was a candidate because Vivaldi's start
+    // page was not on a hard-coded list of four names.
+    for (const url of ['chrome://vivaldi-webui/startpage', 'about:newtab', 'edge://newtab/']) {
+      const c = await boot();
+      await c.tabs.onCreated.emit({ id: 7, url });
+      expect(await ask(c, { url: 'https://duckduckgo.com/?q=linkward' })).toEqual({});
+    }
+  });
+
+  it('still asks about a tab that arrived carrying a link', async () => {
+    const c = await boot();
+    await c.tabs.onCreated.emit({ id: 7, url: 'https://example.com/doc' });
+    const answer = await ask(c, {});
+    expect(answer.redirectUrl).toContain('pick/pick.html');
+  });
+});

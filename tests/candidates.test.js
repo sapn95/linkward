@@ -128,3 +128,44 @@ describe('matchesAny', () => {
     expect(matchesAny('not a url', ['example.com'])).toBe(false);
   });
 });
+
+describe('a tab the browser opened for itself', () => {
+  // Every browser names its own pages differently, and a new tab is where
+  // somebody types a search. Interrupting THAT is the failure that gets an
+  // add-on uninstalled — it was reported from Vivaldi, whose start page was
+  // not on the four-name list this replaced.
+  const OWN_PAGES = [
+    'about:blank',
+    'about:newtab',
+    'about:home',
+    'chrome://newtab/',
+    'chrome://vivaldi-webui/startpage',
+    'vivaldi://startpage',
+    'edge://newtab/',
+    'opera://startpage',
+    'about:sessionrestore',
+    'moz-extension://abc/newtab.html',
+  ];
+
+  it.each(OWN_PAGES)('is not a candidate: %s', (url) => {
+    expect(isCandidateTab({ id: 1, url })).toBe(false);
+  });
+
+  it('is still a candidate when it starts on a real address', () => {
+    // That is what being handed a link looks like.
+    expect(isCandidateTab({ id: 1, url: 'https://example.com/doc' })).toBe(true);
+    expect(isCandidateTab({ id: 1, url: 'http://intranet.local/' })).toBe(true);
+  });
+
+  it('reads pendingUrl too, which is where Chrome puts it', () => {
+    expect(isCandidateTab({ id: 1, url: '', pendingUrl: 'chrome://newtab/' })).toBe(false);
+    expect(isCandidateTab({ id: 1, url: '', pendingUrl: 'https://example.com/' })).toBe(true);
+  });
+
+  it('stays a candidate when the browser has not said yet', () => {
+    // Empty means unknown, not empty. Refusing here would stop the extension
+    // asking at all on a browser that fills the URL in later.
+    expect(isCandidateTab({ id: 1 })).toBe(true);
+    expect(isCandidateTab({ id: 1, url: '' })).toBe(true);
+  });
+});

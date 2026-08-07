@@ -85,8 +85,9 @@ has been open since 2022.
 
 So linkward does not detect external links. It **excludes** everything it can
 positively identify as something else — a tab with an opener, a navigation a
-document started, a tab you have already been browsing in — and asks about what
-is left. Every rule errs towards **not** asking, because interrupting a link you
+document started, a tab you have already been browsing in, and a tab that
+started on one of the browser's own pages rather than on a link — and asks about
+what is left. Every rule errs towards **not** asking, because interrupting a link you
 clicked yourself is the failure that gets an add-on uninstalled.
 
 The rules are one small, pure file — [`src/lib/candidates.js`](src/lib/candidates.js)
