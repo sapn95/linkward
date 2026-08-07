@@ -1,5 +1,5 @@
 import { getSettings, saveSettings, getRules } from '../lib/storage.js';
-import { setRules, removeRule } from '../lib/rules-client.js';
+import { setRule, setRules, removeRule } from '../lib/rules-client.js';
 import {
   hasWatchPermissions,
   requestWatchPermissions,
@@ -138,15 +138,19 @@ async function changeRule(host, value) {
   // not a change, so nothing is written.
   if (value === '__missing__') return;
   const chosen = containersHere.find((c) => c.cookieStoreId === value);
-  const rules = await getRules().catch(() => ({}));
-  rules[host] = chosen
+  const rule = chosen
     ? { container: chosen.name, cookieStoreId: chosen.cookieStoreId }
     : { container: null, cookieStoreId: '', plain: true };
   try {
-    // Synced storage has a size limit and can refuse. Silently keeping the new
-    // value on screen while the old one is what actually applies is the worst
-    // possible outcome for a page about where your sessions open.
-    await setRules(rules);
+    // ONE host, not the whole map. Reading every rule here and sending them all
+    // back would put the read outside the queue that exists to make this safe:
+    // a rule the picker pinned between our read and our write would be erased
+    // by a snapshot older than it. setRule reads and writes inside the queue.
+    //
+    // Synced storage also has a size limit and can refuse. Leaving the new value
+    // on screen while the old one is what applies is the worst outcome for a
+    // page about where your sessions open.
+    await setRule(host, rule);
     await renderRules();
     say(`${host} now opens in ${chosen ? chosen.name : 'no container'}.`);
   } catch (err) {

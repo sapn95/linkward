@@ -159,6 +159,10 @@ function renderContainers(containers, last) {
  */
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // A held key repeats. Each repeat would click the same choice again and start
+  // another open before the first has finished — several tabs, and the same
+  // rule written several times.
+  if (e.repeat) return;
   const buttons = [...choicesEl.querySelectorAll('button')];
   const digit = Number(e.key);
   if (Number.isInteger(digit) && digit >= 1 && digit <= buttons.length) {

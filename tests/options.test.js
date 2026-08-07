@@ -506,3 +506,53 @@ async function mountAgain() {
   await import('../src/options/options.js');
   await settle(20);
 }
+
+describe('changing where one host opens', () => {
+  it('sends that host alone, not a snapshot of every rule', async () => {
+    // Reading the whole map here and sending it all back would put the read
+    // OUTSIDE the queue that exists to make this safe: a rule the picker pinned
+    // between our read and our write would be erased by a snapshot older than
+    // it. The background reads and writes inside its own queue.
+    const sent = [];
+    await mount({
+      granted: true,
+      rules: { 'example.com': { container: 'Work', cookieStoreId: WORK.cookieStoreId } },
+      containers: [WORK, HOME],
+    });
+    const backend = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      sent.push(msg);
+      return backend(msg);
+    };
+    const select = rowFor('example.com').querySelector('select');
+    select.value = HOME.cookieStoreId;
+    select.dispatchEvent(new Event('change'));
+    await settle(30);
+
+    expect(sent.map((m) => m.type)).toEqual(['linkward:rules:set']);
+    expect(sent[0]).toMatchObject({ host: 'example.com', rule: { container: 'Home' } });
+  });
+
+  it('still keeps the whole-map write for an import, where replacing is the point', async () => {
+    const sent = [];
+    await mount({ granted: true, rules: { 'gone.test': { container: 'Work' } } });
+    const backend = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      sent.push(msg);
+      return backend(msg);
+    };
+    const file = {
+      text: async () =>
+        JSON.stringify({
+          format: 'linkward-settings',
+          version: 1,
+          rules: { 'kept.test': { container: 'Work' } },
+        }),
+    };
+    Object.defineProperty($('import-file'), 'files', { value: [file], configurable: true });
+    $('import-file').dispatchEvent(new Event('change'));
+    await settle(30);
+    expect(sent.map((m) => m.type)).toContain('linkward:rules:replace');
+    expect(Object.keys(stored2().rules)).toEqual(['kept.test']);
+  });
+});

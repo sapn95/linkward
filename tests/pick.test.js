@@ -24,7 +24,22 @@ function makeArea(seed = {}) {
   };
 }
 
+// The page listens for keys on `document`, and `document` outlives a remount:
+// replacing documentElement.innerHTML leaves every earlier listener attached,
+// so without this each test would run every previous test's handler too.
+const keyHandlers = [];
+{
+  // Wrapped ONCE, here. Doing it inside mount() nests a spy on a spy on every
+  // call, and a test that mounts in a loop ends up several layers deep.
+  const addListener = document.addEventListener.bind(document);
+  document.addEventListener = (type, fn, options) => {
+    if (type === 'keydown') keyHandlers.push(fn);
+    return addListener(type, fn, options);
+  };
+}
+
 async function mount(url, { containers = [], firefox = true, local = {}, sync = {}, age } = {}) {
+  for (const fn of keyHandlers.splice(0)) document.removeEventListener('keydown', fn);
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   const search =
     url === undefined
@@ -423,5 +438,24 @@ describe('why the question appeared', () => {
       await mount('https://example.com/', { containers: [], age });
       expect($('why').hidden).toBe(true);
     }
+  });
+});
+
+describe('a key held down', () => {
+  it('acts once, not once per repeat', async () => {
+    // Each repeat would click the same choice again and start another open
+    // before the first finished: several tabs, and the same rule written
+    // several times.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+    });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true }));
+    for (let i = 0; i < 5; i++) {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '1', bubbles: true, repeat: true }),
+      );
+    }
+    await settle(30);
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
   });
 });
