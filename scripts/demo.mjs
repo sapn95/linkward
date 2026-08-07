@@ -61,7 +61,7 @@ async function fire(url) {
     // Not `cmd /c start`: cmd re-parses its arguments, so `&` in a URL becomes
     // a command separator and anything after it is run. rundll32 hands the URL
     // to the registered handler with no shell in between.
-    if (browser) await run(browser, [url]);
+    if (browser) await run(browser, profile ? [`--profile-directory=${profile}`, url] : [url]);
     else await run('rundll32', ['url.dll,FileProtocolHandler', url]);
   } else if (browser && profile) {
     await run(browser, [`--profile-directory=${profile}`, url]);

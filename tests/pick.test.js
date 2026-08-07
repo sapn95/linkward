@@ -282,3 +282,41 @@ describe('the words each browser gets', () => {
     expect(document.getElementById('title').textContent).toBe('Where should this open?');
   });
 });
+
+describe('when the wording is decided', () => {
+  it('is Chromium wording before anything is awaited, not after', async () => {
+    // isFirefox() is synchronous; settings and containers are not. Deciding
+    // after them paints "Where should this open?" and "No container" on a
+    // Chromium screen for as long as storage takes — the very words this build
+    // exists to stop showing, arriving as a flicker instead.
+    document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
+    delete globalThis.location;
+    globalThis.location = new URL(
+      `https://ext/pick.html?url=${encodeURIComponent('https://a.test/')}`,
+    );
+    let releaseSettings;
+    globalThis.chrome = {
+      runtime: { getURL: (p) => `chrome-extension://linkward/${p}`, sendMessage: vi.fn() },
+      storage: {
+        // Never settles until the test lets it.
+        sync: { get: () => new Promise((r) => (releaseSettings = r)), set: async () => {} },
+        local: { get: async () => ({}), set: async () => {} },
+      },
+      tabs: { create: vi.fn(), getCurrent: vi.fn(async () => ({ id: 1 })), remove: vi.fn() },
+    };
+    globalThis.browser = undefined;
+    vi.resetModules();
+    const loading = import('../src/pick/pick.js');
+    // Enough for the module to evaluate and init() to reach its first await —
+    // and no further, because the settings promise above never resolves. What
+    // is on screen at this point is what a real user sees while storage is
+    // still being read.
+    await settle(60);
+
+    expect(document.getElementById('plain').textContent).toBe('Open it');
+    expect(document.getElementById('title').textContent).toBe('Open this link?');
+
+    releaseSettings({});
+    await loading;
+  });
+});

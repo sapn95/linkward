@@ -43,6 +43,16 @@ async function init() {
   urlEl.textContent = target.toString();
   hostEl.textContent = target.host;
 
+  // Before the first await, and that is the point: isFirefox() is synchronous,
+  // while settings and containers are not. Deciding the wording after them
+  // paints "Where should this open?" and "No container" on a Chromium screen
+  // for as long as storage takes — the exact words this build exists to stop
+  // showing, arriving as a flicker instead.
+  if (!isFirefox()) {
+    document.getElementById('title').textContent = 'Open this link?';
+    document.getElementById('plain').textContent = 'Open it';
+  }
+
   const settings = await getSettings().catch(() => ({}));
   // Hidden means hidden: the box is not rendered, so nothing on this page can
   // pin a host by accident.
@@ -52,14 +62,6 @@ async function init() {
 
   const containers = await listContainers();
   containersHere = containers;
-  // Chromium wording. "No container" is Firefox's word for a thing Chromium
-  // does not have — there the unit is a PROFILE, and no extension can open a
-  // tab in one it is not already in. A button offering the absence of
-  // something that was never on offer reads as a missing feature.
-  if (!isFirefox()) {
-    document.getElementById('title').textContent = 'Open this link?';
-    document.getElementById('plain').textContent = 'Open it';
-  }
   if (containers.length > 0) {
     renderContainers(containers, settings.lastContainer);
   } else if (isFirefox()) {
