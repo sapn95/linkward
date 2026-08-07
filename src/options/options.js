@@ -1,4 +1,5 @@
-import { getSettings, saveSettings, getRules, setRules, removeRule } from '../lib/storage.js';
+import { getSettings, saveSettings, getRules } from '../lib/storage.js';
+import { setRules, removeRule } from '../lib/rules-client.js';
 import {
   hasWatchPermissions,
   requestWatchPermissions,

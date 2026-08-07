@@ -13,7 +13,8 @@
 
 import { shouldAsk, isCandidateTab, matchesAny } from './lib/candidates.js';
 import { isFirefox, listContainers, resolveRule } from './lib/containers.js';
-import { getSettings, getRules } from './lib/storage.js';
+import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
+import { RULE_MESSAGES } from './lib/rules-client.js';
 
 const PICK_PAGE = 'pick/pick.html';
 // How long after a tab appears its first navigation still counts as the one the
@@ -96,6 +97,8 @@ async function decide(details) {
     freshMs: FRESH_MS,
   });
   if (!ask) return null;
+  // Read before the flag goes: the picker shows it, and nothing else knows it.
+  const since = candidates.get(details.tabId);
   // Answered once per tab: the picker's own navigation must not come back here.
   candidates.delete(details.tabId);
 
@@ -107,6 +110,7 @@ async function decide(details) {
 
   const target = new URL(chrome.runtime.getURL(PICK_PAGE));
   target.searchParams.set('url', details.url);
+  if (since !== undefined) target.searchParams.set('age', String(Date.now() - since));
   return { pick: target.toString() };
 }
 
@@ -273,6 +277,50 @@ chrome.runtime.onStartup.addListener(arm);
 // The only one that really matters after the first run: this is the moment the
 // permission arrives and `chrome.webRequest` becomes something we can add to.
 chrome.permissions.onAdded.addListener(arm);
+
+// --- The one writer of the remembered hosts -------------------------------
+//
+// Every change is read-modify-write over one object, and the picker and the
+// settings page are separate documents that can both be open. Two of them
+// writing at once means the later write lands on a map read before the earlier
+// one, and a host somebody just pinned is gone. A queue inside a page cannot
+// help; the pages share nothing. They share this.
+//
+// The chain is the whole mechanism: each request waits for the one before it,
+// and a failure is passed to the caller rather than breaking the queue.
+let writes = Promise.resolve();
+
+function serialise(work) {
+  const done = writes.then(work, work);
+  // Swallowed HERE, not by the caller: a rejection left on `writes` would make
+  // every later write reject with somebody else's error.
+  writes = done.catch(() => {});
+  return done;
+}
+
+async function applyRuleMessage(msg) {
+  switch (msg.type) {
+    case RULE_MESSAGES.SET:
+      return setRule(msg.host, msg.rule);
+    case RULE_MESSAGES.REMOVE:
+      return removeRule(msg.host);
+    case RULE_MESSAGES.REPLACE:
+      return setRules(msg.rules);
+    default:
+      throw new Error(`Unknown rule message: ${msg.type}`);
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!Object.values(RULE_MESSAGES).includes(msg?.type)) return undefined;
+  serialise(() => applyRuleMessage(msg)).then(
+    (rules) => sendResponse({ rules }),
+    (err) => sendResponse({ error: String(err?.message || err) }),
+  );
+  // Keeps the channel open for the async reply. Without it the caller gets
+  // undefined and reports success over a write that may not have happened.
+  return true;
+});
 
 /** The picker tells us which tabs are its doing, so we do not re-ask. */
 chrome.runtime.onMessage.addListener((msg) => {

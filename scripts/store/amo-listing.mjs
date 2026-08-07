@@ -73,6 +73,8 @@ await box.locator('input[name="icon_upload"]').setInputFiles('dist-firefox/icons
 await page.waitForTimeout(6000);
 if (!hadScreenshot) {
   // Uploading again would add a SECOND copy rather than replace the first.
+  // The Firefox picture: containers, which is the half of linkward that only
+  // works here.
   await box.locator('input[name="uploads"]').setInputFiles('docs/store/01-picker.png');
   await page.waitForTimeout(6000);
 }

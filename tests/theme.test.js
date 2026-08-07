@@ -98,3 +98,29 @@ describe('the row of actions', () => {
     expect(CSS).toMatch(/@media \(max-width: 420px\)[^}]*\{[^@]*grid-template-columns: 1fr/s);
   });
 });
+
+describe('the store screenshots', () => {
+  const chrome = readFileSync(join(process.cwd(), 'docs/store/screenshot-chrome.html'), 'utf8');
+  const firefox = readFileSync(join(process.cwd(), 'docs/store/screenshot.html'), 'utf8');
+
+  it('shows Chrome users no containers, because they cannot have any', () => {
+    // A picture of three containers on the Chrome listing advertises a feature
+    // nobody who installs from there can get.
+    expect(chrome).not.toMatch(/class="choices"/);
+    expect(chrome).not.toMatch(/No container/);
+    expect(chrome).toContain('Open this link?');
+    expect(chrome).toContain('Open it');
+  });
+
+  it('keeps the containers in the Firefox one, where they are the point', () => {
+    expect(firefox).toMatch(/class="choices"/);
+    expect(firefox).toContain('Where should this open?');
+  });
+
+  it('uploads each to the store it belongs to', () => {
+    const toChrome = readFileSync(join(process.cwd(), 'scripts/store/fill-listing.mjs'), 'utf8');
+    const toAmo = readFileSync(join(process.cwd(), 'scripts/store/amo-listing.mjs'), 'utf8');
+    expect(toChrome).toContain('01-picker-chrome.png');
+    expect(toAmo).toMatch(/setInputFiles\('docs\/store\/01-picker\.png'\)/);
+  });
+});

@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { rulesBackend } from './helpers/rules-backend.js';
 import { join } from 'node:path';
 
 // From the project root, not from import.meta.url: under the jsdom environment
@@ -23,16 +24,19 @@ function makeArea(seed = {}) {
   };
 }
 
-async function mount(url, { containers = [], firefox = true, local = {}, sync = {} } = {}) {
+async function mount(url, { containers = [], firefox = true, local = {}, sync = {}, age } = {}) {
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
-  const search = url === undefined ? '' : `?url=${encodeURIComponent(url)}`;
+  const search =
+    url === undefined
+      ? ''
+      : `?url=${encodeURIComponent(url)}${age === undefined ? '' : `&age=${encodeURIComponent(age)}`}`;
   // jsdom will not let location be assigned, so it is replaced outright.
   delete globalThis.location;
   globalThis.location = new URL(`https://ext/pick.html${search}`);
   globalThis.chrome = {
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
-      sendMessage: vi.fn(),
+      sendMessage: vi.fn((msg) => rulesBackend()(msg)),
     },
     storage: { sync: makeArea(sync), local: makeArea(local) },
     tabs: {
@@ -307,16 +311,117 @@ describe('when the wording is decided', () => {
     globalThis.browser = undefined;
     vi.resetModules();
     const loading = import('../src/pick/pick.js');
-    // Enough for the module to evaluate and init() to reach its first await —
-    // and no further, because the settings promise above never resolves. What
-    // is on screen at this point is what a real user sees while storage is
-    // still being read.
-    await settle(60);
+    // Enough for the module graph to evaluate and init() to reach its first
+    // await — and no further, because the settings promise above never
+    // resolves. What is on screen at this point is what somebody actually sees
+    // while storage is still being read. The count is generous on purpose: it
+    // tracks how many modules are imported, not anything about the behaviour.
+    await settle(200);
 
     expect(document.getElementById('plain').textContent).toBe('Open it');
     expect(document.getElementById('title').textContent).toBe('Open this link?');
 
     releaseSettings({});
     await loading;
+  });
+});
+
+describe('the keyboard', () => {
+  const three = [
+    { cookieStoreId: WORK, name: 'Work', color: 'blue' },
+    { cookieStoreId: HOME, name: 'Home', color: 'green' },
+    { cookieStoreId: 'firefox-container-4', name: 'Admin', color: 'pink' },
+  ];
+  const press = (key, init = {}) =>
+    document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
+
+  it('opens the nth container with the nth digit', async () => {
+    // This page interrupts something and is seen many times a day; reaching for
+    // the mouse is most of what it costs.
+    await mount('https://example.com/doc', { containers: three });
+    press('2');
+    await settle(20);
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'https://example.com/doc',
+      active: true,
+      cookieStoreId: HOME,
+    });
+  });
+
+  it('ignores a digit with no container behind it', async () => {
+    await mount('https://example.com/doc', { containers: three });
+    press('9');
+    await settle(20);
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('takes Enter as the one offered first', async () => {
+    // Which is the container used last — the answer somebody wanted often
+    // enough that it is already at the top.
+    await mount('https://example.com/doc', {
+      containers: three,
+      local: { localSettings: { lastContainer: HOME } },
+    });
+    press('Enter');
+    await settle(20);
+    expect(chrome.tabs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ cookieStoreId: HOME }),
+    );
+  });
+
+  it('takes Enter as "open plainly" when there is nothing to choose', async () => {
+    await mount('https://example.com/doc', { containers: [] });
+    press('Enter');
+    await settle(20);
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'https://example.com/doc',
+      active: true,
+    });
+  });
+
+  it('copies on c and closes on Escape', async () => {
+    await mount('https://example.com/doc', { containers: three });
+    press('c');
+    await settle(20);
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/doc');
+
+    press('Escape');
+    await settle(20);
+    expect(chrome.tabs.remove).toHaveBeenCalled();
+  });
+
+  it('keeps its hands off anything with a modifier held', async () => {
+    // ⌘C belongs to whoever is trying to copy the address off the page.
+    await mount('https://example.com/doc', { containers: three });
+    press('c', { metaKey: true });
+    press('1', { ctrlKey: true });
+    press('Enter', { altKey: true });
+    await settle(20);
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('why the question appeared', () => {
+  it('says how old the tab is, because the detection is guesswork by exclusion', async () => {
+    // When it gets one wrong, the person interrupted has nothing to point at
+    // and neither does anybody they report it to.
+    await mount('https://example.com/', { containers: [], age: '2400' });
+    expect($('why').hidden).toBe(false);
+    expect($('why').textContent).toMatch(/opened 2.4s ago/);
+    expect($('why').textContent).toMatch(/nothing in the browser accounts for it/i);
+  });
+
+  it('says nothing at all when it was not told', async () => {
+    await mount('https://example.com/', { containers: [] });
+    expect($('why').hidden).toBe(true);
+  });
+
+  it('says nothing rather than nonsense for a hostile age', async () => {
+    // The query string is attacker-controlled: this page is web_accessible.
+    for (const age of ['-1', 'NaN', 'Infinity', '<img>']) {
+      await mount('https://example.com/', { containers: [], age });
+      expect($('why').hidden).toBe(true);
+    }
   });
 });

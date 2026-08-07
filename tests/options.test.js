@@ -8,6 +8,7 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { rulesBackend } from './helpers/rules-backend.js';
 import { join } from 'node:path';
 
 const HTML = readFileSync(join(process.cwd(), 'src/options/options.html'), 'utf8');
@@ -37,7 +38,11 @@ async function mount({
   removed = [];
   let held = granted;
   globalThis.chrome = {
-    runtime: { getURL: () => `${firefox ? 'moz' : 'chrome'}-extension://linkward/` },
+    runtime: {
+      getURL: () => `${firefox ? 'moz' : 'chrome'}-extension://linkward/`,
+      // The pages ask the background to write; this is the background.
+      sendMessage: (msg) => rulesBackend()(msg),
+    },
     storage: { sync: makeArea({ settings, rules }), local: makeArea() },
   };
   globalThis.browser = {
