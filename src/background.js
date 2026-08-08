@@ -282,7 +282,13 @@ chrome.runtime.onStartup.addListener(arm);
 // and every one of them was folded into a column too narrow to read. A page
 // built for a tab belongs in a tab. Removing `default_popup` from the manifest
 // is what routes the click here.
-chrome.action?.onClicked?.addListener(() => chrome.runtime.openOptionsPage());
+chrome.action?.onClicked?.addListener(() => {
+  // Caught, because nothing else can be: an onClicked listener's promise is
+  // dropped by the dispatcher, and openOptionsPage rejects if the tab cannot be
+  // made. An unhandled rejection in an event page is noise nobody sees and a
+  // wake-up nobody asked for.
+  chrome.runtime.openOptionsPage().catch(() => {});
+});
 // The only one that really matters after the first run: this is the moment the
 // permission arrives and `chrome.webRequest` becomes something we can add to.
 chrome.permissions.onAdded.addListener(arm);

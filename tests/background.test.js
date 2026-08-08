@@ -47,6 +47,7 @@ function makeChrome({ firefox = true, granted = true, settings = { enabled: true
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
       openOptionsPage: vi.fn(async () => {}),
+      // Real one rejects when the tab cannot be made.
       onInstalled: makeEvent(),
       onStartup: makeEvent(),
       onMessage: makeEvent(),
@@ -636,5 +637,23 @@ describe('the toolbar button', () => {
     const c = await boot();
     await c.action.onClicked.emit({ id: 1 });
     expect(c.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+});
+
+describe('when the settings page will not open', () => {
+  it('does not leave an unhandled rejection behind', async () => {
+    // An onClicked listener's promise is dropped by the dispatcher, so nothing
+    // downstream can catch this. In an event page it is noise nobody sees and
+    // a wake-up nobody asked for.
+    const c = await boot();
+    c.runtime.openOptionsPage = vi.fn(async () => {
+      throw new Error('No tab could be created');
+    });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    await c.action.onClicked.emit({ id: 1 });
+    await settle(20);
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
   });
 });
