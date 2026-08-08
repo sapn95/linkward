@@ -6,7 +6,7 @@
 // opened after the user has pressed something.
 
 import { listContainers, containerColor, isFirefox } from '../lib/containers.js';
-import { getSettings, saveSettings } from '../lib/storage.js';
+import { getSettings, saveLastContainer } from '../lib/storage.js';
 import { setRule } from '../lib/rules-client.js';
 
 const params = new URLSearchParams(location.search);
@@ -14,10 +14,11 @@ const raw = params.get('url') ?? '';
 // How long ago the tab this replaced was opened. Passed by the background,
 // which is the only thing that knows.
 //
-// `has` first: a missing parameter reads as null, and Number(null) is 0 — a
-// perfectly finite, non-negative zero that would print "opened 0s ago" on every
-// page that was never told.
-const age = params.has('age') ? Number(params.get('age')) : NaN;
+// Truthiness first, not `has`: a missing parameter reads as null and an empty
+// one as '', and Number() turns BOTH into 0 — a perfectly finite, non-negative
+// zero that would print "opened 0s ago" on a page that was never told.
+const rawAge = params.get('age');
+const age = rawAge ? Number(rawAge) : NaN;
 
 const urlEl = document.getElementById('url');
 const choicesEl = document.getElementById('choices');
@@ -120,7 +121,11 @@ async function init() {
  * anybody they report it to. One line fixes that.
  */
 function why(ms) {
-  if (!Number.isFinite(ms) || ms < 0) return;
+  // Bounded, because this page is web_accessible: the number comes off the
+  // query string, and a site that links here can put anything in it. Nothing we
+  // send can exceed the freshness window, so anything far beyond it is not ours
+  // and is not worth repeating back as fact.
+  if (!Number.isFinite(ms) || ms < 0 || ms > 60_000) return;
   const seconds = Math.round(ms / 100) / 10;
   const el = document.getElementById('why');
   el.textContent =
@@ -209,10 +214,10 @@ async function open(cookieStoreId) {
         ...(cookieStoreId ? {} : { plain: true }),
       }).catch(() => {});
     }
-    await saveSettings({
-      ...(await getSettings()),
-      lastContainer: cookieStoreId,
-    }).catch(() => {});
+    // Only a real container. "Open without one" is not a preference about which
+    // container to offer first next time, and writing '' here erased the one
+    // the user had actually chosen.
+    if (cookieStoreId) await saveLastContainer(cookieStoreId).catch(() => {});
     closeTab();
   } catch (e) {
     // A container deleted between the page loading and the click, or the

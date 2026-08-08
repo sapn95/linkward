@@ -434,7 +434,10 @@ describe('why the question appeared', () => {
 
   it('says nothing rather than nonsense for a hostile age', async () => {
     // The query string is attacker-controlled: this page is web_accessible.
-    for (const age of ['-1', 'NaN', 'Infinity', '<img>']) {
+    // Including a number far past the freshness window: nothing linkward sends
+    // can exceed it, so a large one came from a site that linked here.
+    // The empty one matters: Number('') is 0, exactly like Number(null).
+    for (const age of ['', '-1', 'NaN', 'Infinity', '<img>', '999999999']) {
       await mount('https://example.com/', { containers: [], age });
       expect($('why').hidden).toBe(true);
     }
@@ -457,5 +460,51 @@ describe('a key held down', () => {
     }
     await settle(30);
     expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('what the picker writes when a choice is made', () => {
+  it('touches the local half only, never the synced settings', async () => {
+    // It used to save the WHOLE settings object to record which container was
+    // used last — including the synced half it has no business in. Somebody
+    // with the settings page open who then opened a link had their edit
+    // overwritten by a snapshot the picker took before it.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      sync: { settings: { enabled: true, neverAsk: ['keep.test'] } },
+    });
+    choices()[0].click();
+    await settle(30);
+    // Untouched, exactly as the settings page left it.
+    expect(chrome.storage.sync.store.settings).toEqual({
+      enabled: true,
+      neverAsk: ['keep.test'],
+    });
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
+  });
+
+  it('writes its own key, so nothing else in local storage is rewritten', async () => {
+    // A field inside a shared object means a read-modify-write, and the
+    // settings page writes that same object.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      local: { localSettings: { somethingElse: 1 } },
+    });
+    choices()[0].click();
+    await settle(30);
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
+    expect(chrome.storage.local.store.localSettings).toEqual({ somethingElse: 1 });
+  });
+
+  it('does not forget the chosen container when a link is opened plainly', async () => {
+    // "Open without one" is not a preference about which container to offer
+    // first next time; writing '' erased the one actually chosen.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      local: { lastContainer: WORK },
+    });
+    $('plain').click();
+    await settle(30);
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
   });
 });

@@ -73,3 +73,17 @@ describe('what each build asks the store to grant', () => {
     );
   });
 });
+
+describe('what the toolbar button does', () => {
+  it('has no popup in either build, so the click reaches the background', () => {
+    // With default_popup set, action.onClicked never fires and the settings
+    // open in a few hundred pixels of column.
+    expect(chrome.action.default_popup).toBeUndefined();
+    expect(firefox.action.default_popup).toBeUndefined();
+  });
+
+  it('still opens the settings in a tab', () => {
+    expect(chrome.options_ui.open_in_tab).toBe(true);
+    expect(firefox.options_ui.open_in_tab).toBe(true);
+  });
+});

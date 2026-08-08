@@ -47,10 +47,12 @@ function makeChrome({ firefox = true, granted = true, settings = { enabled: true
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
       openOptionsPage: vi.fn(async () => {}),
+      // Real one rejects when the tab cannot be made.
       onInstalled: makeEvent(),
       onStartup: makeEvent(),
       onMessage: makeEvent(),
     },
+    action: { onClicked: makeEvent() },
     storage: { sync, local, onChanged: makeEvent() },
     permissions: { contains: vi.fn(async () => granted), onAdded: makeEvent() },
     tabs: {
@@ -624,5 +626,34 @@ describe('typing in the address bar', () => {
     await c.tabs.onCreated.emit({ id: 7, url: 'https://example.com/doc' });
     const answer = await ask(c, {});
     expect(answer.redirectUrl).toContain('pick/pick.html');
+  });
+});
+
+describe('the toolbar button', () => {
+  it('opens the settings in a tab, not in a popup', async () => {
+    // A popup is a few hundred pixels wide. This page has a list of remembered
+    // hosts, a dropdown, a textarea and an import/export row, and in a popup
+    // every one of them folds into a column too narrow to read.
+    const c = await boot();
+    await c.action.onClicked.emit({ id: 1 });
+    expect(c.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+});
+
+describe('when the settings page will not open', () => {
+  it('does not leave an unhandled rejection behind', async () => {
+    // An onClicked listener's promise is dropped by the dispatcher, so nothing
+    // downstream can catch this. In an event page it is noise nobody sees and
+    // a wake-up nobody asked for.
+    const c = await boot();
+    c.runtime.openOptionsPage = vi.fn(async () => {
+      throw new Error('No tab could be created');
+    });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    await c.action.onClicked.emit({ id: 1 });
+    await settle(20);
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
   });
 });

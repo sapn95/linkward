@@ -2,18 +2,30 @@
   "manifest_version": 3,
   "name": "linkward",
   "version": "0.1.0",
-  "description": "Asks which container to open a link in — before it opens. Or just copies the URL and opens nothing.",
+  "description": "Asks which container to open a link in \u2014 before it opens. Or just copies the URL and opens nothing.",
   "permissions": ["storage", "contextualIdentities", "cookies"],
   "optional_permissions": ["webRequest", "webRequestBlocking", "webNavigation"],
   "optional_host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "options_ui": { "page": "options/options.html", "open_in_tab": true },
-  "action": { "default_title": "linkward", "default_popup": "options/options.html" },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "linkward settings"
+  },
   "web_accessible_resources": [
     {
       "resources": ["pick/pick.html"],
       "matches": ["<all_urls>"]
     }
   ],
-  "icons": { "16": "icons/icon-16.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
 }
