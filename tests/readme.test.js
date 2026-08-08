@@ -178,3 +178,31 @@ describe('the keyboard, as documented', () => {
     expect(section).toMatch(/⌘, Ctrl or Alt held is left alone/i);
   });
 });
+
+describe('the Mermaid blocks GitHub has to render', () => {
+  const blocks = [...README.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
+
+  it('finds all three', () => {
+    expect(blocks).toHaveLength(3);
+  });
+
+  it('has no semicolon inside a sequence diagram', () => {
+    // A semicolon SEPARATES STATEMENTS there, so one inside a Note ends the
+    // note and the rest is a parse error. GitHub then shows "Unable to render
+    // rich display" and the whole diagram is a wall of text — which is how this
+    // shipped, in a file nobody re-reads after writing.
+    for (const block of blocks.filter((b) => b.includes('sequenceDiagram'))) {
+      expect(block).not.toContain(';');
+    }
+  });
+
+  it('quotes every flowchart label that carries punctuation', () => {
+    // Unquoted (), :, — and the rest end a node early in flowcharts too.
+    for (const block of blocks.filter((b) => b.includes('flowchart'))) {
+      for (const label of block.match(/\[[^\]]*\]|\{[^}]*\}/g) ?? []) {
+        const inner = label.slice(1, -1);
+        if (/[(),:;]/.test(inner)) expect(inner.startsWith('"')).toBe(true);
+      }
+    }
+  });
+});
