@@ -28,6 +28,14 @@ export const DEFAULT_SETTINGS = {
   // over: it was written by a default that has since been reversed, so for
   // almost everyone holding `true` it records nothing anybody decided.
   rememberPrompt: 'unticked',
+  // Ask about bookmarks, and about addresses typed or pasted into a new tab.
+  //
+  // Off, because linkward is for links that arrive from SOMEWHERE ELSE, and a
+  // bookmark is not one: the user has already said where that goes, by saving
+  // it. Nothing below the browser can tell the two apart — see
+  // startedInsideBrowser in candidates.js — so this is the switch for people
+  // who would rather be asked about everything than miss one.
+  askInternal: false,
   // The container picked last, offered first next time. Machine-local.
   lastContainer: '',
 };
@@ -61,6 +69,9 @@ export async function getSettings() {
   if (!REMEMBER_PROMPT.includes(merged.rememberPrompt)) {
     merged.rememberPrompt = DEFAULT_SETTINGS.rememberPrompt;
   }
+  // Also off disk. Anything truthy-but-not-true — the string "false", say —
+  // would otherwise switch the interception on for bookmarks by accident.
+  merged.askInternal = merged.askInternal === true;
   delete merged.rememberChoices;
   return merged;
 }
@@ -70,6 +81,7 @@ export async function saveSettings(settings) {
   if (!REMEMBER_PROMPT.includes(merged.rememberPrompt)) {
     merged.rememberPrompt = DEFAULT_SETTINGS.rememberPrompt;
   }
+  merged.askInternal = merged.askInternal === true;
   delete merged.rememberChoices;
   const synced = { ...merged };
   const here = {};

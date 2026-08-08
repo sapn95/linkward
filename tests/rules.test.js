@@ -138,8 +138,14 @@ describe('what gets stored', () => {
 describe('the settings file', () => {
   it('survives a round trip', () => {
     const rules = { 'example.com': { container: 'Work', cookieStoreId: WORK.cookieStoreId } };
-    const out = fromTransfer(toTransfer({ neverAsk: ['a.test'], rememberPrompt: 'ticked' }, rules));
-    expect(out.settings).toEqual({ neverAsk: ['a.test'], rememberPrompt: 'ticked' });
+    const out = fromTransfer(
+      toTransfer({ neverAsk: ['a.test'], rememberPrompt: 'ticked', askInternal: true }, rules),
+    );
+    expect(out.settings).toEqual({
+      neverAsk: ['a.test'],
+      rememberPrompt: 'ticked',
+      askInternal: true,
+    });
     expect(out.rules).toEqual(rules);
   });
 
@@ -176,6 +182,30 @@ describe('the settings file', () => {
       expect(out.settings.rememberPrompt).toBe('unticked');
       expect(out.settings.rememberChoices).toBeUndefined();
     }
+  });
+
+  it('takes the default for an askInternal that is not a boolean', () => {
+    // Including a file written before the setting existed. Anything other than
+    // a literal true is off, because "on" here means being interrupted for
+    // every bookmark and it should only ever come from somebody ticking a box.
+    for (const settings of [
+      { askInternal: 'true' },
+      { askInternal: 1 },
+      { askInternal: 'false' },
+      { askInternal: null },
+      {},
+    ]) {
+      const out = fromTransfer({ format: FORMAT, version: 1, settings });
+      expect(out.settings.askInternal).toBe(false);
+    }
+    const on = fromTransfer({ format: FORMAT, version: 1, settings: { askInternal: true } });
+    expect(on.settings.askInternal).toBe(true);
+  });
+
+  it('exports it as a boolean whatever was in storage', () => {
+    expect(toTransfer({ askInternal: 'yes' }, {}).settings.askInternal).toBe(false);
+    expect(toTransfer({}, {}).settings.askInternal).toBe(false);
+    expect(toTransfer({ askInternal: true }, {}).settings.askInternal).toBe(true);
   });
 
   it('cleans the never-ask list it is handed', () => {

@@ -29,6 +29,7 @@ describe('the documented settings file', () => {
     // Without this the test passes even when the importer drops the field and
     // hands back the default, which is exactly how documentation goes stale.
     expect(out.settings.rememberPrompt).toBe('ticked');
+    expect(out.settings.askInternal).toBe(false);
     expect(out.rules['docs.example.com']).toEqual({
       container: 'Work',
       cookieStoreId: 'firefox-container-2',
@@ -54,7 +55,80 @@ describe('the diagrams', () => {
   it('are Mermaid, which GitHub renders inline', () => {
     // No committed SVG to keep in step with the source, because this repo is
     // read on GitHub and GitHub draws the fenced block itself.
-    expect(README.match(/```mermaid/g) ?? []).toHaveLength(3);
+    expect(README.match(/```mermaid/g) ?? []).toHaveLength(4);
+  });
+});
+
+describe('what the README says about bookmarks and typed addresses', () => {
+  const section = README.slice(
+    README.indexOf('### Bookmarks and typed addresses'),
+    README.indexOf('## Chrome'),
+  ).replace(/\s+/g, ' ');
+
+  it('exists under the anchor the options page links to', () => {
+    // The tick box on the settings page points here. A dead fragment there is
+    // worse than no link: it reads as a page that used to explain itself.
+    expect(section).not.toBe('');
+    expect(readFileSync(join(process.cwd(), 'src/options/options.html'), 'utf8')).toContain(
+      '#bookmarks-and-typed-addresses',
+    );
+  });
+
+  it('names all four things that look the same, not just the two reported', () => {
+    for (const one of ['a bookmark', 'typed or pasted', 'search from the address bar']) {
+      expect(section).toContain(one);
+    }
+  });
+
+  it('says why the field that would settle it cannot be used', () => {
+    // Somebody will suggest transitionType. The answer has to survive being
+    // asked again in six months.
+    expect(section).toMatch(/transitionType/);
+    expect(section).toMatch(/only on `webNavigation\.onCommitted`/i);
+    expect(section).toMatch(/after the request has already gone/i);
+  });
+
+  it('says what is used instead, and that it is a proxy', () => {
+    expect(section).toMatch(/was the browser \*{0,2}already in front/i);
+    expect(section).toMatch(/windows\.onFocusChanged/);
+    expect(section).toMatch(/proxy, not the fact/i);
+  });
+
+  it('names the two cases it gets wrong rather than leaving them to be found', () => {
+    // A limit somebody discovers themselves reads as a bug. The same limit
+    // written down reads as a decision.
+    expect(section).toMatch(/without raising the browser/i);
+    expect(section).toMatch(/open -g/);
+    expect(section).toMatch(/inside a second and a half/i);
+  });
+
+  it('says why a window switch counts, instead of leaving it looking careless', () => {
+    // It is the obvious thing to "fix", and fixing it trades a bounded
+    // annoyance for a silent, unbounded one. Written down, or somebody removes
+    // it in six months — quite possibly me.
+    expect(section).toMatch(/the _loss_ of focus is the half neither browser reports/i);
+    expect(section).toMatch(/Bounded and annoying beats unbounded and silent/i);
+    // Cited, not asserted. The claim is the whole reason for a design somebody
+    // will otherwise read as sloppy.
+    expect(section).toContain('bugzilla.mozilla.org/show_bug.cgi?id=1391942');
+  });
+
+  it('says what happens on Android, which is a supported target', () => {
+    // gecko_android is in the manifest. No windows to focus there, so the API
+    // is absent and the rule never fires — worth saying, because "it does not
+    // work on my phone" would otherwise read as a bug.
+    expect(section).toMatch(/Firefox for Android/);
+    expect(section).toMatch(/no windows to focus/i);
+  });
+
+  it('says which way it errs when it cannot tell, and that that is deliberate', () => {
+    expect(section).toMatch(/err towards \*{0,2}asking/i);
+    expect(section).toMatch(/storage\.session/);
+  });
+
+  it('says the setting exists and that it is off', () => {
+    expect(section).toMatch(/Ask about bookmarks and addresses I type myself/);
+    expect(section).toMatch(/It is off\./);
   });
 });
 
@@ -182,8 +256,8 @@ describe('the keyboard, as documented', () => {
 describe('the Mermaid blocks GitHub has to render', () => {
   const blocks = [...README.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
 
-  it('finds all three', () => {
-    expect(blocks).toHaveLength(3);
+  it('finds all four', () => {
+    expect(blocks).toHaveLength(4);
   });
 
   it('has no semicolon inside a sequence diagram', () => {

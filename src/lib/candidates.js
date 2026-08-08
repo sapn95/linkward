@@ -90,6 +90,67 @@ export function shouldAsk(
   return true;
 }
 
+// --- Was the browser already in front? -------------------------------------
+//
+// The exclusions above cannot separate these four, because to `webRequest` and
+// `webNavigation` they are byte for byte identical — a new tab, an http(s)
+// address, no opener, navigating within a few seconds:
+//
+//   a link handed over by Slack, Outlook, a terminal   ← the only one we want
+//   a bookmark
+//   an address typed or pasted into a new tab
+//   a search from the address bar
+//
+// The field that names them is `transitionType` — `auto_bookmark`, `typed`,
+// `link` — and it exists ONLY on webNavigation.onCommitted, which is after the
+// request has gone. Firefox's blocking webRequest has no equivalent at all, and
+// that build is the one where interception is exact; a fix that moved the
+// decision to onCommitted would take away the reason to use it.
+//
+// So: the one thing that is knowable BEFORE the request, on both browsers, and
+// that actually differs between the four.
+//
+// A bookmark, an address bar, a history entry — all of them are somebody
+// already in the browser, using the browser. A link from another application
+// is, by definition, somebody who was NOT: they were in Slack, and the browser
+// is being brought to the front to receive it. `windows.onFocusChanged` says
+// which of those just happened.
+//
+// It is a proxy, not the fact, and it is wrong in two places named in the
+// README. Both err towards asking, which is the direction the rest of this file
+// errs in too.
+
+/**
+ * How long after the browser comes to the front a new tab still counts as the
+ * reason it was brought there.
+ *
+ * The focus change and the tab arrive within the same handful of milliseconds
+ * on a warm browser, and up to a few hundred on one that had to start. Wide
+ * enough to cover that; narrow enough that "switch to the browser, then open a
+ * bookmark" is over it long before the click lands.
+ */
+export const FOCUS_GRACE_MS = 1500;
+
+/**
+ * Was this tab opened from INSIDE the browser?
+ *
+ * @param {{focusedSince?: number|null}} focus - when the browser last came to
+ *   the front; `null` for "it is behind something else", missing for "we do not
+ *   know yet".
+ * @param {{at?: number, graceMs?: number}} when - `at` is when the TAB was
+ *   created, not now: by the time this is asked the browser is always in front.
+ * @returns {boolean} true only when we positively know it started in here.
+ */
+export function startedInsideBrowser(focus, { at = Date.now(), graceMs = FOCUS_GRACE_MS } = {}) {
+  const since = focus?.focusedSince;
+  // Not focused, or nothing recorded. Neither is evidence of anything, and the
+  // answer to "no evidence" is the behaviour without this rule: ask.
+  if (!Number.isFinite(since)) return false;
+  // Negative when the focus event landed after the tab did, which is the
+  // ordinary race on a hand-off. Still inside the window, still not ours.
+  return at - since > graceMs;
+}
+
 /**
  * Does `url` match one of the user's never-ask patterns?
  *

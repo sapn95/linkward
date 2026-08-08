@@ -11,7 +11,8 @@
 // needs (`<all_urls>` above all) are requested from the options page and can be
 // handed back, and no listener is registered while they are absent.
 
-import { shouldAsk, isCandidateTab, matchesAny } from './lib/candidates.js';
+import { shouldAsk, isCandidateTab, matchesAny, startedInsideBrowser } from './lib/candidates.js';
+import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js';
 import { isFirefox, listContainers, resolveRule } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
@@ -100,7 +101,22 @@ async function decide(details) {
   // Read before the flag goes: the picker shows it, and nothing else knows it.
   const since = candidates.get(details.tabId);
   // Answered once per tab: the picker's own navigation must not come back here.
+  // Before the check below, not after — a tab that has been decided about is
+  // decided about, whichever way it went.
   candidates.delete(details.tabId);
+
+  // A bookmark, or an address typed into a new tab. Indistinguishable from a
+  // hand-off in everything webRequest and webNavigation carry, so what is asked
+  // instead is whether the browser was ALREADY in front when the tab appeared —
+  // see startedInsideBrowser. Measured at `since`, the moment the tab was
+  // created, because by now the browser is in front either way.
+  if (!settings.askInternal) {
+    // readFocusState answers `{}` rather than rejecting, on purpose and with a
+    // test of its own: this is inside a blocking listener, and a rejection here
+    // would be holding up somebody's page.
+    const focus = await readFocusState();
+    if (startedInsideBrowser(focus, { at: since ?? Date.now() })) return null;
+  }
 
   // A remembered host is the whole point of the tick box on the picker, and
   // until now nothing read these back — the box wrote a rule that was never
@@ -255,9 +271,37 @@ async function onBeforeNavigate(details) {
   }
 }
 
+// --- Who brought the browser to the front ----------------------------------
+//
+// The only thing knowable before a request that separates a link handed over by
+// another application from a bookmark, a typed address or an address-bar
+// search. Needs no permission on either browser, so it is armed unconditionally
+// — and synchronously, for the same reason as everything else above.
+function onFocusChanged(windowId) {
+  // Returned rather than dropped: the browser keeps an event page alive for a
+  // promise a listener gives back, and this one has a write in it.
+  return noteFocusChange(windowId);
+}
+
+function armFocus() {
+  try {
+    if (!chrome.windows.onFocusChanged.hasListener(onFocusChanged)) {
+      chrome.windows.onFocusChanged.addListener(onFocusChanged);
+    }
+  } catch {
+    // No windows to focus — Firefox for Android, among others. The rule that
+    // reads this then never fires, and linkward asks exactly as it did before.
+  }
+  // Deliberately NOT awaited. arm() has to stay synchronous or the listeners it
+  // registers stop being ones the event page can be started for, which is the
+  // bug this whole file is arranged around.
+  seedFocusState().catch(() => {});
+}
+
 function arm() {
   armFirefox();
   armChrome();
+  armFocus();
 }
 
 // Before anything else, and before any await: see armFirefox().

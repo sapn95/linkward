@@ -39,7 +39,16 @@ function makeArea() {
  * object. Modelling it as always-present is what let a whole class of arming
  * bug through: the tests could not tell "registered" from "could not register".
  */
-function makeChrome({ firefox = true, granted = true, settings = { enabled: true } } = {}) {
+function makeChrome({
+  firefox = true,
+  granted = true,
+  settings = { enabled: true },
+  // Both default to present, because both are on every browser linkward
+  // supports. The `false` cases are the ones that prove the extension still
+  // works — asking exactly as it used to — where they are not.
+  windows = true,
+  session = true,
+} = {}) {
   const sync = makeArea();
   const local = makeArea();
   sync.store.settings = settings;
@@ -53,7 +62,10 @@ function makeChrome({ firefox = true, granted = true, settings = { enabled: true
       onMessage: makeEvent(),
     },
     action: { onClicked: makeEvent() },
-    storage: { sync, local, onChanged: makeEvent() },
+    // storage.session is where the focus state outlives an event page that the
+    // browser is free to tear down between the focus change and the tab that
+    // follows it.
+    storage: { sync, local, onChanged: makeEvent(), ...(session ? { session: makeArea() } : {}) },
     permissions: { contains: vi.fn(async () => granted), onAdded: makeEvent() },
     tabs: {
       onCreated: makeEvent(),
@@ -63,6 +75,14 @@ function makeChrome({ firefox = true, granted = true, settings = { enabled: true
       update: vi.fn(async () => ({})),
     },
   };
+  if (windows) {
+    // Needs no permission on either browser, which is why it can be relied on
+    // while everything else here is still off.
+    c.windows = {
+      onFocusChanged: makeEvent(),
+      getLastFocused: vi.fn(async () => ({ id: 1, focused: true })),
+    };
+  }
   if (granted) {
     if (firefox) c.webRequest = { onBeforeRequest: makeEvent() };
     else c.webNavigation = { onBeforeNavigate: makeEvent() };
@@ -626,6 +646,324 @@ describe('typing in the address bar', () => {
     await c.tabs.onCreated.emit({ id: 7, url: 'https://example.com/doc' });
     const answer = await ask(c, {});
     expect(answer.redirectUrl).toContain('pick/pick.html');
+  });
+});
+
+describe('a bookmark, or an address typed into a new tab', () => {
+  // Reported twice, on the Chrome build: opening a bookmark, and pasting an
+  // address, both got the picker. To webRequest and webNavigation they are the
+  // same event as a link handed over by Slack — new tab, http(s) address, no
+  // opener, navigating within seconds — and `transitionType`, the field that
+  // names them, only exists on onCommitted, after the request has gone.
+  //
+  // So what is asked instead is whether the browser was ALREADY in front. A
+  // bookmark is somebody using the browser; a hand-off is the browser being
+  // brought to the front to receive something.
+
+  /** The browser has been in front, untouched, for `ms`. */
+  async function inFrontFor(c, ms) {
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(ms);
+  }
+
+  /** The user was in another application, clicked a link, the browser came up. */
+  async function handedOver(c, awayFor = 30_000) {
+    await c.windows.onFocusChanged.emit(-1);
+    await settle();
+    vi.advanceTimersByTime(awayFor);
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+  }
+
+  it('is left alone on Firefox', async () => {
+    const c = await boot();
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+  });
+
+  it('is left alone on Chrome', async () => {
+    const c = await boot({ firefox: false });
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    await c.webNavigation.onBeforeNavigate.emit({
+      frameId: 0,
+      tabId: 7,
+      url: 'https://example.com/doc',
+    });
+    await settle();
+    expect(c.tabs.update).not.toHaveBeenCalled();
+  });
+
+  it('does not stop a real hand-off being asked about, on Firefox', async () => {
+    // The half that must not break. The browser was behind Slack, the OS raised
+    // it, and the tab arrived in the same breath.
+    const c = await boot();
+    await handedOver(c);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('does not stop a real hand-off being asked about, on Chrome', async () => {
+    const c = await boot({ firefox: false });
+    await handedOver(c);
+    await c.tabs.onCreated.emit({ id: 7 });
+    await c.webNavigation.onBeforeNavigate.emit({
+      frameId: 0,
+      tabId: 7,
+      url: 'https://example.com/doc',
+    });
+    await settle();
+    expect(c.tabs.update).toHaveBeenCalledWith(7, {
+      url: expect.stringContaining('pick/pick.html'),
+    });
+  });
+
+  it('still asks for a link that arrives while the browser stays in the background', async () => {
+    // `open -g`, a script, a notification. The browser never came to the front,
+    // so nobody clicked anything in it.
+    const c = await boot();
+    await c.windows.onFocusChanged.emit(-1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('still asks while the browser has only just come to the front', async () => {
+    // The grace period. Nothing orders the focus event against the tab, and on
+    // a browser that had to start there are a few hundred milliseconds between
+    // them.
+    const c = await boot();
+    await handedOver(c);
+    vi.advanceTimersByTime(1400);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('stops asking once the browser has been in front longer than that', async () => {
+    const c = await boot();
+    await handedOver(c);
+    vi.advanceTimersByTime(1600);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+  });
+
+  it('does not open a remembered container for a bookmark either', async () => {
+    // The check runs BEFORE the rules are read: a bookmark for a host pinned to
+    // a container must not be cancelled and reopened, because the browser is
+    // already doing the right thing with it.
+    const c = await boot({ settings: { enabled: true } });
+    c.storage.sync.store.rules = {
+      'example.com': { container: 'Work', cookieStoreId: 'firefox-container-2' },
+    };
+    globalThis.browser = {
+      contextualIdentities: {
+        query: async () => [{ cookieStoreId: 'firefox-container-2', name: 'Work' }],
+      },
+    };
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+    await settle(20);
+    expect(c.tabs.create).not.toHaveBeenCalled();
+    expect(c.tabs.remove).not.toHaveBeenCalled();
+  });
+
+  it('spends the tab flag anyway, so the next navigation is not reconsidered', async () => {
+    // A tab that has been decided about is decided about, whichever way it
+    // went. Leaving the flag would give the same tab a second chance for the
+    // rest of the freshness window.
+    const c = await boot();
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+    // Straight after: the browser is still in front, so this would be skipped
+    // for that reason too. Ask as the hand-off case instead, which would
+    // otherwise be asked about.
+    await handedOver(c);
+    expect(await ask(c, { url: 'https://elsewhere.example/' })).toEqual({});
+  });
+
+  it('asks about everything again when the setting says to', async () => {
+    // For people who would rather be interrupted than miss one. Off by default.
+    const c = await boot({ settings: { enabled: true, askInternal: true } });
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('asks about everything again when the setting says to, on Chrome', async () => {
+    const c = await boot({ firefox: false, settings: { enabled: true, askInternal: true } });
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    await c.webNavigation.onBeforeNavigate.emit({
+      frameId: 0,
+      tabId: 7,
+      url: 'https://example.com/doc',
+    });
+    await settle();
+    expect(c.tabs.update).toHaveBeenCalled();
+  });
+
+  it('treats a stored non-boolean as off, not as on', async () => {
+    // Settings come off disk and can hold anything. The string "false" is
+    // truthy, and coercing it would switch the interception back on for every
+    // bookmark somebody has.
+    const c = await boot({ settings: { enabled: true, askInternal: 'false' } });
+    await inFrontFor(c, 30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+  });
+});
+
+describe('when the browser cannot say who brought it to the front', () => {
+  // Every one of these has the same answer: behave exactly as linkward did
+  // before the rule existed. Guessing "somebody clicked a bookmark" from a
+  // missing answer would silently stop the extension doing its job.
+
+  it('asks as it always did when there is no windows API', async () => {
+    const c = await boot({ windows: false });
+    vi.advanceTimersByTime(30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('does not throw on load when there is no windows API', async () => {
+    const c = await boot({ windows: false });
+    expect(c.webRequest.onBeforeRequest.size()).toBe(1);
+  });
+
+  it('asks as it always did when the browser will not say', async () => {
+    const c = makeChrome();
+    c.windows.getLastFocused = vi.fn(async () => {
+      throw new Error('no windows');
+    });
+    globalThis.chrome = c;
+    vi.resetModules();
+    await import('../src/background.js');
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toHaveProperty('redirectUrl');
+  });
+});
+
+describe('across a background page that was torn down and started again', () => {
+  // The MV3 background is an event page: the browser stops it when it is idle
+  // and starts it again for whatever it listens for. A focus change and the tab
+  // that follows it are two separate wake-ups, so a plain variable between them
+  // is gone — which would leave the focus state unknown on almost every
+  // navigation and the whole rule inert.
+
+  /** A new run of the background, over the storage the browser kept. */
+  async function restart(c, over = {}) {
+    const next = makeChrome({ settings: c.storage.sync.store.settings, ...over });
+    next.storage.sync = c.storage.sync;
+    next.storage.local = c.storage.local;
+    if (c.storage.session) next.storage.session = c.storage.session;
+    globalThis.chrome = next;
+    vi.resetModules();
+    await import('../src/background.js');
+    await settle();
+    return next;
+  }
+
+  it('still knows the browser had been in front, so a bookmark is left alone', async () => {
+    const c = await boot();
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+
+    const next = await restart(c);
+    await next.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(next, {})).toEqual({});
+  });
+
+  it('still asks about a hand-off that arrives after one', async () => {
+    const c = await boot();
+    await c.windows.onFocusChanged.emit(-1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+
+    const next = await restart(c);
+    await next.windows.onFocusChanged.emit(1);
+    await settle();
+    await next.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(next, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('goes back to asking when there is nowhere for the state to survive', async () => {
+    // No storage.session: the number lives only as long as this run of the
+    // event page. The degradation is that linkward asks, which is what it did
+    // before any of this — never that it stays quiet on a guess.
+    const c = await boot({ session: false });
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    expect(c.storage.session).toBeUndefined();
+
+    const next = await restart(c, { session: false });
+    await next.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(next, {})).toHaveProperty('redirectUrl');
+  });
+
+  it('remembers within one run of the event page even then', async () => {
+    // The common case is a focus change and a tab in the same wake-up, and the
+    // in-memory half covers it with no storage at all.
+    const c = await boot({ session: false });
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
+  });
+});
+
+describe('arming the focus listener', () => {
+  it('registers it synchronously, like everything else here', async () => {
+    // Same event-page rule: a listener added after an await is not one the
+    // browser can start the background page for, so the focus state would stop
+    // being recorded the moment the page idled out — and every bookmark would
+    // be asked about again.
+    const c = makeChrome({ granted: true });
+    c.permissions.contains = () => new Promise(() => {});
+    globalThis.chrome = c;
+    vi.resetModules();
+    await import('../src/background.js');
+    await settle();
+    expect(c.windows.onFocusChanged.size()).toBe(1);
+  });
+
+  it('registers it even with no permissions granted, because it needs none', async () => {
+    const c = await boot({ granted: false });
+    expect(c.windows.onFocusChanged.size()).toBe(1);
+  });
+
+  it('does not register it twice', async () => {
+    // arm() runs on load, on install, on startup and on every permission change.
+    const c = await boot();
+    await c.runtime.onInstalled.emit({ reason: 'update' });
+    await c.runtime.onStartup.emit();
+    await c.permissions.onAdded.emit({});
+    await settle();
+    expect(c.windows.onFocusChanged.size()).toBe(1);
+  });
+
+  it('does not restart the clock every time the background page wakes up', async () => {
+    // arm() seeds the focus state, and it runs on every wake-up. Seeding over a
+    // real value would make the browser look freshly raised several times a
+    // minute, which is the bug this whole change is about.
+    const c = await boot();
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    await c.runtime.onStartup.emit();
+    await c.permissions.onAdded.emit({});
+    await settle();
+    await c.tabs.onCreated.emit({ id: 7 });
+    expect(await ask(c, {})).toEqual({});
   });
 });
 

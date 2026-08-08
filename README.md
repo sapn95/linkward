@@ -93,6 +93,76 @@ clicked yourself is the failure that gets an add-on uninstalled.
 The rules are one small, pure file — [`src/lib/candidates.js`](src/lib/candidates.js)
 — and it is the most heavily tested thing in the repo.
 
+### Bookmarks and typed addresses
+
+Those exclusions leave four things that look **identical** to an extension — a
+new tab, an `http(s)` address, no opener, navigating within a few seconds:
+
+| What actually happened                           |                        |
+| ------------------------------------------------ | ---------------------- |
+| a link handed over by Slack, Outlook, a terminal | the one linkward wants |
+| a bookmark                                       | must be left alone     |
+| an address typed or pasted into a new tab        | must be left alone     |
+| a search from the address bar                    | must be left alone     |
+
+The field that names them is `transitionType` — `auto_bookmark`, `typed`,
+`link` — and it exists **only on `webNavigation.onCommitted`**, which fires
+after the request has already gone. Firefox's blocking `webRequest` has no
+equivalent at all, and that is the build where the interception is exact;
+moving the decision to `onCommitted` would take away the reason to use it.
+
+So linkward asks the one question that is answerable **before** the request, on
+both browsers, and that actually differs between the four: **was the browser
+already in front?** A bookmark, the address bar, a history entry — all of them
+are somebody who is already in the browser, using it. A link from another
+application is by definition somebody who was _not_: they were in Slack, and
+the browser is being brought to the front to receive it.
+[`windows.onFocusChanged`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/windows/onFocusChanged)
+says which of the two just happened. It needs no permission on either browser.
+
+```mermaid
+flowchart TD
+    S["New tab, http(s) address,<br/>no opener, first navigation"] --> Q{"How long had the<br/>browser been in front<br/>when the tab appeared?"}
+    Q -->|"longer than 1.5s"| IN["Started in here:<br/>bookmark, address bar, history"]
+    Q -->|"it had just come to the front"| OUT["Handed over by<br/>another application"]
+    Q -->|"it is still behind something else"| OUT
+    Q -->|"nothing recorded"| OUT
+    IN --> L["Left alone"]
+    OUT --> P["Ask where it should open"]
+    L -.->|"setting: ask about<br/>these too"| P
+
+    style P fill:#2f6feb,color:#fff
+    style L fill:#eaf1ff,color:#16181d
+```
+
+It is a proxy, not the fact, and it is wrong in two places. Both are named here
+rather than left to be discovered:
+
+- **A link that arrives without raising the browser** — `open -g`, a cron job, a
+  script — looks like something you did in here, and is not asked about.
+- **Come to the browser and open a bookmark inside a second and a half** and you
+  are asked, as before — including when you only moved between two browser
+  windows. That last one is a choice: not counting a window switch would mean
+  keeping a timestamp across a focus change, and the _loss_ of focus is the half
+  neither browser reports reliably —
+  [Firefox does not fire it](https://bugzilla.mozilla.org/show_bug.cgi?id=1391942)
+  when you leave a non-browser window for another application, open since 2017,
+  and Chrome has been reported not to fire it on minimise. One missed report and
+  every later hand-off would look like something you did in here and never be
+  asked about again. Bounded and annoying beats unbounded and silent.
+
+On **Firefox for Android** there are no windows to focus, so the API is absent
+and none of this applies: linkward asks there exactly as it did before.
+
+Both err towards **asking**, which is the direction every other rule in that
+file errs in too. And if the browser will not say — no `windows` API, no
+`storage.session` to keep the answer in across an event page the browser tears
+down when it likes — the answer is "we do not know", which behaves exactly like
+linkward did before any of this: it asks.
+
+**Settings → Ask about bookmarks and addresses I type myself** turns the whole
+rule off, for people who would rather be interrupted than miss one. It is off.
+
 ## Chrome
 
 ```mermaid
@@ -184,7 +254,8 @@ remembered hosts, as JSON — two fields are left out on purpose, see below.
   "version": 1,
   "settings": {
     "neverAsk": ["intranet.example", "mail.example"],
-    "rememberPrompt": "ticked"
+    "rememberPrompt": "ticked",
+    "askInternal": false
   },
   "rules": {
     "docs.example.com": {
@@ -205,7 +276,8 @@ remembered hosts, as JSON — two fields are left out on purpose, see below.
 | `format`                    | Always `linkward-settings`. A file without it is refused, rather than half-read.                                     |
 | `version`                   | `1`. A **higher** number is refused: a newer linkward may mean something else by these fields. A lower one is read.  |
 | `settings.neverAsk`         | Hosts to leave alone entirely. Subdomains included. Trimmed, de-duplicated and sorted on import.                     |
-| `settings.rememberChoices`  | Whether the picker's tick box starts ticked.                                                                         |
+| `settings.rememberPrompt`   | What the picker does with its "remember this host" box: `hidden`, `unticked` or `ticked`.                            |
+| `settings.askInternal`      | `true` to ask about bookmarks and addresses you type yourself as well — see above. Anything but `true` reads as off. |
 | `rules`                     | One entry per remembered host, keyed by the host in lower case.                                                      |
 | `rules[host].container`     | The container's **name**. This is what a rule is matched on.                                                         |
 | `rules[host].cookieStoreId` | The id that name had on the machine that wrote the file. Only ever used for a rule that carries no name — see below. |

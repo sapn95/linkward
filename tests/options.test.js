@@ -193,6 +193,55 @@ describe('the never-ask list', () => {
   });
 });
 
+describe('bookmarks and addresses typed in this browser', () => {
+  it('is unticked on a page that has never been saved', async () => {
+    await mount({ granted: true });
+    expect($('ask-internal').checked).toBe(false);
+  });
+
+  it('shows it ticked when it is on', async () => {
+    await mount({ granted: true, settings: { askInternal: true } });
+    expect($('ask-internal').checked).toBe(true);
+  });
+
+  it('saves the tick as soon as it changes', async () => {
+    await mount({ granted: true, settings: { enabled: true } });
+    $('ask-internal').checked = true;
+    $('ask-internal').dispatchEvent(new Event('change'));
+    await settle();
+    expect(stored().askInternal).toBe(true);
+  });
+
+  it('saves the untick as well', async () => {
+    await mount({ granted: true, settings: { enabled: true, askInternal: true } });
+    $('ask-internal').checked = false;
+    $('ask-internal').dispatchEvent(new Event('change'));
+    await settle();
+    expect(stored().askInternal).toBe(false);
+  });
+
+  it('does not lose it when something else on the page is saved', async () => {
+    // Every control writes the WHOLE settings object. A field left out of that
+    // write is a field reset to its default by editing something unrelated.
+    await mount({ granted: true, settings: { enabled: true, askInternal: true } });
+    $('never').value = 'example.com';
+    $('never').dispatchEvent(new Event('change'));
+    await settle();
+    expect(stored().askInternal).toBe(true);
+    expect(stored().neverAsk).toEqual(['example.com']);
+  });
+
+  it('says what it cannot tell apart instead of claiming it can', async () => {
+    // The rule behind this box is a proxy — whether the browser was already in
+    // front — and it is wrong in two named places. A tick box that implied
+    // otherwise would be the page lying about the one thing it does.
+    await mount({ granted: true });
+    const note = $('ask-internal').closest('label').nextElementSibling;
+    expect(note.textContent).toMatch(/already in front/i);
+    expect(note.querySelector('a')?.href).toMatch(/github\.com\/sapn95\/linkward/);
+  });
+});
+
 describe('what the page admits to', () => {
   it('says on Chrome that it cannot stop the request or reach a profile', async () => {
     await mount({ firefox: false });
@@ -330,7 +379,11 @@ describe('the settings file, from the page', () => {
         JSON.stringify({
           format: 'linkward-settings',
           version: 1,
-          settings: { neverAsk: ['imported.test'], rememberPrompt: 'ticked' },
+          settings: {
+            neverAsk: ['imported.test'],
+            rememberPrompt: 'ticked',
+            askInternal: true,
+          },
           rules: { 'b.test': { container: 'Work', cookieStoreId: 'firefox-container-2' } },
         }),
     };
@@ -340,6 +393,9 @@ describe('the settings file, from the page', () => {
     expect(stored2().rules['b.test'].container).toBe('Work');
     expect($('never').value).toBe('imported.test');
     expect($('remember-prompt').value).toBe('ticked');
+    // On screen as well as in storage. A page still showing the old value over
+    // settings that have changed is how somebody turns something on twice.
+    expect($('ask-internal').checked).toBe(true);
   });
 
   it('says what was wrong with a file it cannot read, and changes nothing', async () => {
