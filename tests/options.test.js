@@ -67,7 +67,10 @@ async function mount({
   await settle();
 }
 
-async function settle(times = 6) {
+// Generous by default: the count tracks how many awaits the page makes on its
+// way to storage, not anything about the behaviour, and every await added to
+// getSettings pushed the old six over the edge.
+async function settle(times = 30) {
   for (let i = 0; i < times; i++) await Promise.resolve();
 }
 

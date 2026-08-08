@@ -8,6 +8,7 @@ export const SETTINGS_KEY = 'settings';
 export const REMEMBER_PROMPT = ['hidden', 'unticked', 'ticked'];
 const LOCAL_KEY = 'localSettings';
 const LOCAL_KEYS = ['lastContainer'];
+const LAST_CONTAINER_KEY = 'lastContainer';
 
 export const DEFAULT_SETTINGS = {
   // Off until the user turns it on: switching it on is what asks for
@@ -47,6 +48,10 @@ export async function getSettings() {
   }
   const here = l ? (await l.get(LOCAL_KEY))?.[LOCAL_KEY] : null;
   const merged = { ...DEFAULT_SETTINGS, ...stored, ...(here ?? legacy) };
+  // The key it lives in now. Older copies kept it inside localSettings above,
+  // which is why that is still read first rather than instead.
+  const own = l ? (await l.get(LAST_CONTAINER_KEY))?.[LAST_CONTAINER_KEY] : null;
+  if (typeof own === 'string') merged.lastContainer = own;
   // Straight off disk, so it can be anything at all; a non-array reaches a
   // `.some()` in the hot path and would throw where nothing catches it.
   merged.neverAsk = Array.isArray(merged.neverAsk)
@@ -142,8 +147,11 @@ export function readRules(raw) {
 export async function saveLastContainer(cookieStoreId) {
   const l = local();
   if (!l) return;
-  const here = (await l.get(LOCAL_KEY))?.[LOCAL_KEY] ?? {};
-  await l.set({ [LOCAL_KEY]: { ...here, lastContainer: String(cookieStoreId ?? '') } });
+  // Its OWN key, not a field inside localSettings. Reading that object and
+  // writing it back is a read-modify-write, and saveSettings writes the same
+  // object — so an options-page save overlapping this one would still lose
+  // whichever went first. A key of its own has nothing to overlap with.
+  await l.set({ [LAST_CONTAINER_KEY]: String(cookieStoreId ?? '') });
 }
 
 /** Per-host decisions the user asked to be remembered. Follows the account. */

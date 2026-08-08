@@ -436,7 +436,8 @@ describe('why the question appeared', () => {
     // The query string is attacker-controlled: this page is web_accessible.
     // Including a number far past the freshness window: nothing linkward sends
     // can exceed it, so a large one came from a site that linked here.
-    for (const age of ['-1', 'NaN', 'Infinity', '<img>', '999999999']) {
+    // The empty one matters: Number('') is 0, exactly like Number(null).
+    for (const age of ['', '-1', 'NaN', 'Infinity', '<img>', '999999999']) {
       await mount('https://example.com/', { containers: [], age });
       expect($('why').hidden).toBe(true);
     }
@@ -479,19 +480,31 @@ describe('what the picker writes when a choice is made', () => {
       enabled: true,
       neverAsk: ['keep.test'],
     });
-    expect(chrome.storage.local.store.localSettings.lastContainer).toBe(WORK);
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
   });
 
-  it('keeps whatever else the local half held', async () => {
+  it('writes its own key, so nothing else in local storage is rewritten', async () => {
+    // A field inside a shared object means a read-modify-write, and the
+    // settings page writes that same object.
     await mount('https://example.com/doc', {
       containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
-      local: { localSettings: { lastContainer: 'old', somethingElse: 1 } },
+      local: { localSettings: { somethingElse: 1 } },
     });
     choices()[0].click();
     await settle(30);
-    expect(chrome.storage.local.store.localSettings).toEqual({
-      lastContainer: WORK,
-      somethingElse: 1,
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
+    expect(chrome.storage.local.store.localSettings).toEqual({ somethingElse: 1 });
+  });
+
+  it('does not forget the chosen container when a link is opened plainly', async () => {
+    // "Open without one" is not a preference about which container to offer
+    // first next time; writing '' erased the one actually chosen.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      local: { lastContainer: WORK },
     });
+    $('plain').click();
+    await settle(30);
+    expect(chrome.storage.local.store.lastContainer).toBe(WORK);
   });
 });

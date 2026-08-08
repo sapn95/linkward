@@ -14,10 +14,11 @@ const raw = params.get('url') ?? '';
 // How long ago the tab this replaced was opened. Passed by the background,
 // which is the only thing that knows.
 //
-// `has` first: a missing parameter reads as null, and Number(null) is 0 — a
-// perfectly finite, non-negative zero that would print "opened 0s ago" on every
-// page that was never told.
-const age = params.has('age') ? Number(params.get('age')) : NaN;
+// Truthiness first, not `has`: a missing parameter reads as null and an empty
+// one as '', and Number() turns BOTH into 0 — a perfectly finite, non-negative
+// zero that would print "opened 0s ago" on a page that was never told.
+const rawAge = params.get('age');
+const age = rawAge ? Number(rawAge) : NaN;
 
 const urlEl = document.getElementById('url');
 const choicesEl = document.getElementById('choices');
@@ -213,7 +214,10 @@ async function open(cookieStoreId) {
         ...(cookieStoreId ? {} : { plain: true }),
       }).catch(() => {});
     }
-    await saveLastContainer(cookieStoreId).catch(() => {});
+    // Only a real container. "Open without one" is not a preference about which
+    // container to offer first next time, and writing '' here erased the one
+    // the user had actually chosen.
+    if (cookieStoreId) await saveLastContainer(cookieStoreId).catch(() => {});
     closeTab();
   } catch (e) {
     // A container deleted between the page loading and the click, or the
