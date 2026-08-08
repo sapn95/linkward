@@ -143,10 +143,16 @@ rather than left to be discovered:
 - **Come to the browser and open a bookmark inside a second and a half** and you
   are asked, as before — including when you only moved between two browser
   windows. That last one is a choice: not counting a window switch would mean
-  keeping a timestamp across a focus change, and Chrome does not always report
-  the _loss_ of focus. One missed report and every later hand-off would look
-  like something you did in here and never be asked about again. Bounded and
-  annoying beats unbounded and silent.
+  keeping a timestamp across a focus change, and the _loss_ of focus is the half
+  neither browser reports reliably —
+  [Firefox does not fire it](https://bugzilla.mozilla.org/show_bug.cgi?id=1391942)
+  when you leave a non-browser window for another application, open since 2017,
+  and Chrome has been reported not to fire it on minimise. One missed report and
+  every later hand-off would look like something you did in here and never be
+  asked about again. Bounded and annoying beats unbounded and silent.
+
+On **Firefox for Android** there are no windows to focus, so the API is absent
+and none of this applies: linkward asks there exactly as it did before.
 
 Both err towards **asking**, which is the direction every other rule in that
 file errs in too. And if the browser will not say — no `windows` API, no

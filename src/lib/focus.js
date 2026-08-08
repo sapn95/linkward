@@ -78,14 +78,20 @@ export async function noteFocusChange(windowId, now = Date.now()) {
   //
   // The alternative is to keep the old timestamp when the browser is believed
   // to be in front already, so that a window switch does not count. It reads
-  // better and it fails much worse. Chrome does not always report the loss of
-  // focus — minimising a window has been reported not to fire it, and the
-  // behaviour differs per platform. With that guard in place, one missed
-  // WINDOW_ID_NONE means
-  // every later gain is discarded as "already in front", the recorded time
-  // stays hours old, and from then on every link handed over by another
-  // application looks like something done in here and is silently never asked
-  // about — until the next loss of focus that does report itself.
+  // better and it fails much worse, because the LOSS of focus is the half that
+  // is not reliable:
+  //
+  //   Firefox  bugzilla.mozilla.org/show_bug.cgi?id=1391942 — open since 2017:
+  //            leaving a non-browser window (Library, Page Info, the Browser
+  //            Console) for another application does not fire WINDOW_ID_NONE.
+  //   Chrome   minimising a window has been reported not to fire it either, and
+  //            the behaviour differs per platform.
+  //
+  // With that guard in place, one missed WINDOW_ID_NONE means every later gain
+  // is discarded as "already in front", the recorded time stays hours old, and
+  // from then on every link handed over by another application looks like
+  // something done in here and is silently never asked about — until the next
+  // loss of focus that does report itself.
   //
   // Bounded and annoying beats unbounded and silent.
   return write({ focusedSince: now });

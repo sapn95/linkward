@@ -106,8 +106,19 @@ describe('what the README says about bookmarks and typed addresses', () => {
     // It is the obvious thing to "fix", and fixing it trades a bounded
     // annoyance for a silent, unbounded one. Written down, or somebody removes
     // it in six months — quite possibly me.
-    expect(section).toMatch(/does not always report the _loss_ of focus/i);
+    expect(section).toMatch(/the _loss_ of focus is the half neither browser reports/i);
     expect(section).toMatch(/Bounded and annoying beats unbounded and silent/i);
+    // Cited, not asserted. The claim is the whole reason for a design somebody
+    // will otherwise read as sloppy.
+    expect(section).toContain('bugzilla.mozilla.org/show_bug.cgi?id=1391942');
+  });
+
+  it('says what happens on Android, which is a supported target', () => {
+    // gecko_android is in the manifest. No windows to focus there, so the API
+    // is absent and the rule never fires — worth saying, because "it does not
+    // work on my phone" would otherwise read as a bug.
+    expect(section).toMatch(/Firefox for Android/);
+    expect(section).toMatch(/no windows to focus/i);
   });
 
   it('says which way it errs when it cannot tell, and that that is deliberate', () => {
