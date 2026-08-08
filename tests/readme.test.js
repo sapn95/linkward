@@ -206,3 +206,29 @@ describe('the Mermaid blocks GitHub has to render', () => {
     }
   });
 });
+
+describe('the diagrams in dark mode', () => {
+  const blocks = [...README.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
+
+  it('tints a sequence-diagram rect rather than painting over it', () => {
+    // A `rect` sets a background and NOT the text colour, which comes from
+    // whichever theme GitHub is in. An opaque light fill therefore renders light
+    // grey text on near-white in dark mode: the diagram was unreadable, and the
+    // light-mode preview it was written against showed nothing wrong.
+    for (const rect of README.match(/rect rgba?\([^)]*\)/g) ?? []) {
+      expect(rect).toMatch(/^rect rgba\(/);
+      const alpha = Number(rect.match(/,\s*([\d.]+)\s*\)$/)?.[1]);
+      expect(alpha).toBeLessThanOrEqual(0.2);
+    }
+  });
+
+  it('never sets a fill in a flowchart without setting a colour with it', () => {
+    // Same trap, one diagram type over: fill alone leaves the label to the
+    // theme, and the pair has to work in both.
+    for (const block of blocks) {
+      for (const style of block.match(/style \w+ [^\n]*/g) ?? []) {
+        if (style.includes('fill:')) expect(style).toMatch(/color:/);
+      }
+    }
+  });
+});

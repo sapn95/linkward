@@ -39,7 +39,7 @@ flowchart TD
 
     style F fill:#2f6feb,color:#fff
     style E fill:#eaf1ff,color:#16181d
-    style L fill:#f0f2f6,color:#5d6470
+    style L fill:#8080801f,color:#8a8f98
 ```
 
 Every branch that is not the blue one errs towards **not** interrupting you.
@@ -102,7 +102,7 @@ sequenceDiagram
     participant L as linkward
     participant S as The server
 
-    rect rgb(234, 241, 255)
+    rect rgba(47, 111, 235, 0.12)
     Note over App,S: Firefox — before the request is sent
     App->>B: open this link
     B->>L: onBeforeRequest (blocking)
@@ -112,7 +112,7 @@ sequenceDiagram
     B->>S: first and only request
     end
 
-    rect rgb(240, 242, 246)
+    rect rgba(128, 128, 128, 0.12)
     Note over App,S: Chrome — it cannot be held
     App->>B: open this link
     B->>L: onBeforeNavigate
