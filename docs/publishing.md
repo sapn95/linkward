@@ -50,7 +50,7 @@ should not hold up the Chrome half.
 > three Chrome values from the SAME downloaded `client_secret_*.json`. A fresh
 > token against a stale client id fails with `invalid_client`, which reads like
 > a permissions problem and is not.
-
+>
 > Publish the OAuth consent screen (**In production**). While it is in Testing,
 > Google expires every refresh token after seven days.
 
