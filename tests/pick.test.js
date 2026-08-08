@@ -434,7 +434,9 @@ describe('why the question appeared', () => {
 
   it('says nothing rather than nonsense for a hostile age', async () => {
     // The query string is attacker-controlled: this page is web_accessible.
-    for (const age of ['-1', 'NaN', 'Infinity', '<img>']) {
+    // Including a number far past the freshness window: nothing linkward sends
+    // can exceed it, so a large one came from a site that linked here.
+    for (const age of ['-1', 'NaN', 'Infinity', '<img>', '999999999']) {
       await mount('https://example.com/', { containers: [], age });
       expect($('why').hidden).toBe(true);
     }
@@ -457,5 +459,39 @@ describe('a key held down', () => {
     }
     await settle(30);
     expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('what the picker writes when a choice is made', () => {
+  it('touches the local half only, never the synced settings', async () => {
+    // It used to save the WHOLE settings object to record which container was
+    // used last — including the synced half it has no business in. Somebody
+    // with the settings page open who then opened a link had their edit
+    // overwritten by a snapshot the picker took before it.
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      sync: { settings: { enabled: true, neverAsk: ['keep.test'] } },
+    });
+    choices()[0].click();
+    await settle(30);
+    // Untouched, exactly as the settings page left it.
+    expect(chrome.storage.sync.store.settings).toEqual({
+      enabled: true,
+      neverAsk: ['keep.test'],
+    });
+    expect(chrome.storage.local.store.localSettings.lastContainer).toBe(WORK);
+  });
+
+  it('keeps whatever else the local half held', async () => {
+    await mount('https://example.com/doc', {
+      containers: [{ cookieStoreId: WORK, name: 'Work', color: 'blue' }],
+      local: { localSettings: { lastContainer: 'old', somethingElse: 1 } },
+    });
+    choices()[0].click();
+    await settle(30);
+    expect(chrome.storage.local.store.localSettings).toEqual({
+      lastContainer: WORK,
+      somethingElse: 1,
+    });
   });
 });

@@ -127,6 +127,25 @@ export function readRules(raw) {
   return { ...out };
 }
 
+/**
+ * The container used last, and nothing else.
+ *
+ * The picker used to reach this through saveSettings, which is a
+ * read-modify-write over the WHOLE settings object — including the synced half
+ * it has no business touching. Somebody with the settings page open who then
+ * opened a link had their edit overwritten by a snapshot the picker had taken
+ * before it: the same clobber the remembered hosts were just rescued from,
+ * one object over.
+ *
+ * This writes the local area alone, so the two can never be in each other's way.
+ */
+export async function saveLastContainer(cookieStoreId) {
+  const l = local();
+  if (!l) return;
+  const here = (await l.get(LOCAL_KEY))?.[LOCAL_KEY] ?? {};
+  await l.set({ [LOCAL_KEY]: { ...here, lastContainer: String(cookieStoreId ?? '') } });
+}
+
 /** Per-host decisions the user asked to be remembered. Follows the account. */
 export async function getRules() {
   const s = sync();
