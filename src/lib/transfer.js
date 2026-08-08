@@ -18,6 +18,7 @@ export function toTransfer(settings, rules) {
     settings: {
       neverAsk: [...(settings?.neverAsk ?? [])],
       rememberPrompt: settings?.rememberPrompt ?? DEFAULT_SETTINGS.rememberPrompt,
+      askInternal: settings?.askInternal === true,
     },
     rules: readRules(rules),
   };
@@ -58,6 +59,10 @@ export function fromTransfer(parsed) {
       rememberPrompt: REMEMBER_PROMPT.includes(incoming.rememberPrompt)
         ? incoming.rememberPrompt
         : DEFAULT_SETTINGS.rememberPrompt,
+      // Only a literal true turns this on. A file written by a linkward that
+      // predates the setting has no such key, and the answer for it is the
+      // default — not "whatever this happens to coerce to".
+      askInternal: incoming.askInternal === true,
     },
     rules: readRules(parsed.rules),
   };

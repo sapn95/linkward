@@ -8,7 +8,14 @@
 // Every test below is written from that asymmetry.
 
 import { describe, it, expect } from 'vitest';
-import { isCandidateTab, shouldAsk, isInterceptable, matchesAny } from '../src/lib/candidates.js';
+import {
+  isCandidateTab,
+  shouldAsk,
+  isInterceptable,
+  matchesAny,
+  startedInsideBrowser,
+  FOCUS_GRACE_MS,
+} from '../src/lib/candidates.js';
 
 const req = (over = {}) => ({
   type: 'main_frame',
@@ -167,5 +174,89 @@ describe('a tab the browser opened for itself', () => {
     // asking at all on a browser that fills the URL in later.
     expect(isCandidateTab({ id: 1 })).toBe(true);
     expect(isCandidateTab({ id: 1, url: '' })).toBe(true);
+  });
+});
+
+describe('startedInsideBrowser', () => {
+  // The one rule that separates a bookmark from a hand-off. Everything else in
+  // this file sees them as the same event, because to the browser they are.
+  //
+  // The asymmetry from the top of the file applies here in full: `true` means
+  // "leave this alone", so a wrong `true` is a link from Slack that opened
+  // wherever it liked. Every case below that is not POSITIVE evidence of
+  // somebody clicking inside the browser has to come back false.
+  const IN_FRONT_FOR_AGES = { focusedSince: 1000 };
+
+  it('says yes when the browser had been in front for a while', () => {
+    // A bookmark, an address typed into a new tab, a search: the user was
+    // already here.
+    expect(startedInsideBrowser(IN_FRONT_FOR_AGES, { at: 1000 + FOCUS_GRACE_MS + 1 })).toBe(true);
+    expect(startedInsideBrowser(IN_FRONT_FOR_AGES, { at: 60_000 })).toBe(true);
+  });
+
+  it('says no while the browser has only just come to the front', () => {
+    // Which is what being handed a link looks like: the OS raises the browser
+    // and the tab arrives in the same breath.
+    expect(startedInsideBrowser(IN_FRONT_FOR_AGES, { at: 1000 })).toBe(false);
+    expect(startedInsideBrowser(IN_FRONT_FOR_AGES, { at: 1000 + FOCUS_GRACE_MS })).toBe(false);
+  });
+
+  it('is exact at the boundary, in the direction that asks', () => {
+    // Strictly greater. At exactly the grace period it still asks, because the
+    // cost of asking once too often is an interruption and the cost of not
+    // asking is a session in the wrong container.
+    expect(startedInsideBrowser({ focusedSince: 0 }, { at: FOCUS_GRACE_MS })).toBe(false);
+    expect(startedInsideBrowser({ focusedSince: 0 }, { at: FOCUS_GRACE_MS + 1 })).toBe(true);
+  });
+
+  it('says no when the focus change landed after the tab did', () => {
+    // The ordinary race on a hand-off: nothing orders windows.onFocusChanged
+    // against tabs.onCreated, and on a warm browser they arrive together. A
+    // negative age must not read as "in front for ages".
+    expect(startedInsideBrowser({ focusedSince: 5000 }, { at: 4000 })).toBe(false);
+    expect(startedInsideBrowser({ focusedSince: 5000 }, { at: 0 })).toBe(false);
+  });
+
+  it('says no when the browser is not in front at all', () => {
+    // A link that arrived without raising the browser — `open -g`, a script.
+    // Not somebody clicking in here, so not ours to skip.
+    expect(startedInsideBrowser({ focusedSince: null }, { at: 60_000 })).toBe(false);
+  });
+
+  it('says no when nothing has been recorded', () => {
+    // The state is lost with the event page and lives in storage.session, which
+    // can be unavailable. "We do not know" must behave exactly like linkward
+    // did before this rule existed.
+    expect(startedInsideBrowser({}, { at: 60_000 })).toBe(false);
+    expect(startedInsideBrowser(undefined, { at: 60_000 })).toBe(false);
+    expect(startedInsideBrowser(null, { at: 60_000 })).toBe(false);
+  });
+
+  it('says no for anything that is not a real timestamp', () => {
+    // storage.session is storage: it can hold whatever a previous version, or a
+    // bug, put there. NaN in particular compares false against everything,
+    // which happens to be the safe answer — but not by design, so it is pinned.
+    for (const focusedSince of [NaN, Infinity, -Infinity, '1000', true, {}, [], () => 1]) {
+      expect(startedInsideBrowser({ focusedSince }, { at: 60_000 })).toBe(false);
+    }
+  });
+
+  it('takes the grace period as an argument rather than reaching for a global', () => {
+    expect(startedInsideBrowser({ focusedSince: 0 }, { at: 100, graceMs: 50 })).toBe(true);
+    expect(startedInsideBrowser({ focusedSince: 0 }, { at: 100, graceMs: 500 })).toBe(false);
+  });
+
+  it('defaults `at` to now, so a missing creation time is not a free pass', () => {
+    // If the caller has no timestamp for the tab, the answer must still be the
+    // conservative one for anything the browser has just been given.
+    expect(startedInsideBrowser({ focusedSince: Date.now() })).toBe(false);
+    expect(startedInsideBrowser({ focusedSince: Date.now() - 60_000 })).toBe(true);
+  });
+
+  it('leaves a full second and a half of room for a slow hand-off', () => {
+    // A browser that had to start takes a few hundred milliseconds between
+    // being raised and producing the tab. Shrinking this constant is how that
+    // case silently stops being asked about.
+    expect(FOCUS_GRACE_MS).toBeGreaterThanOrEqual(1000);
   });
 });

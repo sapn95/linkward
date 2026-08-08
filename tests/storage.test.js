@@ -51,6 +51,39 @@ describe('settings', () => {
     await expect(getSettings()).resolves.toMatchObject(DEFAULT_SETTINGS);
   });
 
+  it('does not ask about bookmarks and typed addresses out of the box', async () => {
+    // A bookmark is not a link from somewhere else — the user already said
+    // where it goes by saving it. Reported twice as the picker appearing for
+    // something nobody handed the browser.
+    expect(DEFAULT_SETTINGS.askInternal).toBe(false);
+    await expect(getSettings()).resolves.toMatchObject({ askInternal: false });
+  });
+
+  it('reads only a literal true as "ask about those too"', async () => {
+    // Off disk, so it can be anything, and every truthy value here switches the
+    // interception back on for every bookmark somebody has. The string "false"
+    // is the one that hurts.
+    for (const askInternal of ['false', 'no', 1, {}, [], 'true']) {
+      await chrome.storage.sync.set({ settings: { askInternal } });
+      await expect(getSettings()).resolves.toMatchObject({ askInternal: false });
+    }
+    await chrome.storage.sync.set({ settings: { askInternal: true } });
+    await expect(getSettings()).resolves.toMatchObject({ askInternal: true });
+  });
+
+  it('writes it back as a boolean, whatever a page handed it', async () => {
+    await saveSettings({ enabled: true, askInternal: 'yes' });
+    expect(chrome.storage.sync.store.settings.askInternal).toBe(false);
+    await saveSettings({ enabled: true, askInternal: true });
+    expect(chrome.storage.sync.store.settings.askInternal).toBe(true);
+  });
+
+  it('syncs it, because it is a decision and not a machine detail', async () => {
+    await saveSettings({ ...DEFAULT_SETTINGS, askInternal: true });
+    expect(chrome.storage.sync.store.settings.askInternal).toBe(true);
+    expect(chrome.storage.local.store.localSettings.askInternal).toBeUndefined();
+  });
+
   it('never lets a non-array never-ask list reach the hot path', async () => {
     // It is JSON off disk, so it can be anything; a string here reaches a
     // .some() in the interception and throws where nothing catches it.

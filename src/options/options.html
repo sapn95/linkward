@@ -43,6 +43,23 @@
         </select>
       </label>
 
+      <label class="check">
+        <input id="ask-internal" type="checkbox" />
+        Ask about bookmarks and addresses I type myself
+      </label>
+      <p class="note">
+        Off, because a bookmark is not a link from somewhere else — you already said where it goes
+        by saving it. Nothing in the browser tells an extension these apart, so linkward goes by
+        whether the browser was <em>already in front</em> when the tab appeared. It gets that wrong
+        in two places, both listed in the
+        <a
+          href="https://github.com/sapn95/linkward#bookmarks-and-typed-addresses"
+          target="_blank"
+          rel="noreferrer"
+          >readme</a
+        >.
+      </p>
+
       <h2>Never ask for</h2>
       <p class="note">One host per line. Subdomains are included.</p>
       <textarea id="never" rows="5" spellcheck="false"></textarea>

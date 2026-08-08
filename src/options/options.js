@@ -18,6 +18,7 @@ let containersHere = [];
 async function init() {
   const settings = await getSettings().catch(() => ({}));
   $('remember-prompt').value = settings.rememberPrompt ?? 'unticked';
+  $('ask-internal').checked = settings.askInternal === true;
   $('never').value = (settings.neverAsk ?? []).join('\n');
   // Shown as what the BROWSER actually grants, not as what was stored: the
   // permission can be handed back in the browser's own add-on settings behind
@@ -27,6 +28,7 @@ async function init() {
 
   $('enabled').addEventListener('change', onToggle);
   $('remember-prompt').addEventListener('change', save);
+  $('ask-internal').addEventListener('change', save);
   $('never').addEventListener('change', save);
   $('export').addEventListener('click', exportSettings);
   $('import').addEventListener('click', () => $('import-file').click());
@@ -217,6 +219,7 @@ async function importSettings(e) {
     await saveSettings({ ...settings, ...incoming.settings });
     await setRules(incoming.rules);
     $('remember-prompt').value = incoming.settings.rememberPrompt;
+    $('ask-internal').checked = incoming.settings.askInternal;
     $('never').value = incoming.settings.neverAsk.join('\n');
     await renderRules();
     const kept = Object.keys(incoming.rules).length;
@@ -236,6 +239,7 @@ async function save() {
     ...settings,
     enabled: $('enabled').checked,
     rememberPrompt: $('remember-prompt').value,
+    askInternal: $('ask-internal').checked,
     neverAsk: $('never')
       .value.split('\n')
       .map((l) => l.trim())
