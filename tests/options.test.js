@@ -40,6 +40,7 @@ async function mount({
   globalThis.chrome = {
     runtime: {
       getURL: () => `${firefox ? 'moz' : 'chrome'}-extension://linkward/`,
+      getManifest: () => ({ version: '9.9.9' }),
       // The pages ask the background to write; this is the background.
       sendMessage: (msg) => rulesBackend()(msg),
     },
@@ -554,5 +555,38 @@ describe('changing where one host opens', () => {
     await settle(30);
     expect(sent.map((m) => m.type)).toContain('linkward:rules:replace');
     expect(Object.keys(stored2().rules)).toEqual(['kept.test']);
+  });
+});
+
+describe('which build this is', () => {
+  it('shows the version from the manifest, not from a constant', () => {
+    // A number written into the source drifts from what is installed the first
+    // time somebody forgets to change it. The manifest cannot.
+    const source = readFileSync(join(process.cwd(), 'src/options/options.js'), 'utf8');
+    expect(source).toMatch(/getManifest\?\.\(\)/);
+  });
+
+  it('puts it on the page, with somewhere to report something', async () => {
+    // It is the first thing anybody needs when reporting a problem, and the
+    // first thing they cannot find.
+    await mount({ granted: true });
+    expect($('version').textContent).toBe('linkward 9.9.9');
+    const links = [...document.querySelectorAll('.version a')].map((a) => a.href);
+    expect(links).toEqual([
+      'https://github.com/sapn95/linkward',
+      'https://github.com/sapn95/linkward/issues',
+    ]);
+  });
+
+  it('says the name alone rather than "linkward undefined"', async () => {
+    // getManifest is absent in some contexts, and a page reading "undefined"
+    // where a version belongs is worse than one reading nothing.
+    await mount({ granted: true });
+    delete globalThis.chrome.runtime.getManifest;
+    document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
+    vi.resetModules();
+    await import('../src/options/options.js');
+    await settle(20);
+    expect($('version').textContent).toBe('linkward');
   });
 });

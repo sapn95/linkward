@@ -35,6 +35,10 @@ async function init() {
   containersHere = await listContainers();
   await renderRules();
 
+  // The manifest is the only thing that knows, and it cannot drift from what is
+  // installed the way a constant in the source would.
+  $('version').textContent = `linkward ${chrome.runtime.getManifest?.()?.version ?? ''}`.trim();
+
   $('honest').textContent = isFirefox()
     ? 'Firefox lets linkward stop the request before it is sent, so the page is never fetched.'
     : 'Chrome removed the ability to stop a request, so linkward can only turn the tab around ' +
