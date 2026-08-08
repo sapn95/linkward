@@ -79,8 +79,9 @@ export async function noteFocusChange(windowId, now = Date.now()) {
   // The alternative is to keep the old timestamp when the browser is believed
   // to be in front already, so that a window switch does not count. It reads
   // better and it fails much worse. Chrome does not always report the loss of
-  // focus: minimising has been reported not to fire it since 2013, and it is
-  // per-platform. With that guard in place, one missed WINDOW_ID_NONE means
+  // focus — minimising a window has been reported not to fire it, and the
+  // behaviour differs per platform. With that guard in place, one missed
+  // WINDOW_ID_NONE means
   // every later gain is discarded as "already in front", the recorded time
   // stays hours old, and from then on every link handed over by another
   // application looks like something done in here and is silently never asked
