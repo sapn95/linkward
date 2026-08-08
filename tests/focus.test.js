@@ -64,8 +64,10 @@ describe('recording a focus change', () => {
     // null and missing lead to the same decision today, but they are different
     // facts: one is seeded over by seedFocusState, the other must not be.
     const c = makeChrome();
-    const { noteFocusChange, readFocusState } = await load(c);
-    await noteFocusChange(-1, 5000);
+    const { noteFocusChange, readFocusState, WINDOW_ID_NONE } = await load(c);
+    // The value the browsers actually send, not a -1 that happens to match.
+    expect(WINDOW_ID_NONE).toBe(-1);
+    await noteFocusChange(WINDOW_ID_NONE, 5000);
     expect(await readFocusState()).toEqual({ focusedSince: null });
   });
 
