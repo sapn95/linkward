@@ -108,6 +108,17 @@ export async function seedFocusState(now = Date.now()) {
   } catch {
     window = null;
   }
+  // Read again, because the listener is registered BEFORE this runs and a real
+  // focus change can land while getLastFocused is outstanding. What the browser
+  // reported beats what this was about to guess.
+  //
+  // One interleaving fails unsafely, which is why this is not just tidiness: a
+  // WINDOW_ID_NONE arrives during the await, getLastFocused answers `focused:
+  // true` from before it, and the seed overwrites "gone" with "in front since
+  // now". The state then claims a stretch in front that never happened, and a
+  // link handed over later than the grace period is silently not asked about.
+  const arrived = await readFocusState();
+  if ('focusedSince' in arrived) return arrived;
   // `focused` is false when the browser is running behind something else, and
   // undefined on a browser that does not answer. Treating undefined as "not
   // focused" is the safe way round: it records nothing about how long anything

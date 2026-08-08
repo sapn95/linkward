@@ -192,6 +192,45 @@ describe('seeding, when nothing has been recorded at all', () => {
     }
   });
 
+  it('keeps a focus change that landed while it was asking the browser', async () => {
+    // The listener is armed BEFORE the seed runs, so a real focus change can
+    // arrive during the await — and the one that matters is the browser going
+    // AWAY. getLastFocused then answers `focused: true` from the moment before
+    // it, and a seed that overwrote the loss would record a stretch in front
+    // that never happened. Anything handed over later than the grace period
+    // would be taken for something done in the browser, and silently not asked
+    // about.
+    let answer;
+    const c = makeChrome();
+    c.windows.getLastFocused = vi.fn(() => new Promise((resolve) => (answer = resolve)));
+    const { seedFocusState, noteFocusChange, readFocusState, WINDOW_ID_NONE } = await load(c);
+
+    const seeding = seedFocusState(5000);
+    await Promise.resolve();
+    await noteFocusChange(WINDOW_ID_NONE, 5001);
+    answer({ id: 1, focused: true });
+    await seeding;
+
+    expect(await readFocusState()).toEqual({ focusedSince: null });
+  });
+
+  it('keeps a recorded gain that landed during the same await', async () => {
+    // The mirror, which is safe either way — but a seed that clobbered it would
+    // restart the clock and turn a bookmark back into a question.
+    let answer;
+    const c = makeChrome({ lastFocused: null });
+    c.windows.getLastFocused = vi.fn(() => new Promise((resolve) => (answer = resolve)));
+    const { seedFocusState, noteFocusChange, readFocusState } = await load(c);
+
+    const seeding = seedFocusState(5000);
+    await Promise.resolve();
+    await noteFocusChange(1, 1000);
+    answer(null);
+    await seeding;
+
+    expect(await readFocusState()).toEqual({ focusedSince: 1000 });
+  });
+
   it('survives getLastFocused resolving nothing at all', async () => {
     const c = makeChrome();
     c.windows.getLastFocused = vi.fn(async () => undefined);
