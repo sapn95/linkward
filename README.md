@@ -119,7 +119,7 @@ sequenceDiagram
     Note right of L: fires first, but cannot<br/>hold anything: MV3 has<br/>no blocking form
     B->>S: request goes while linkward decides
     L->>B: turn the tab around
-    Note right of L: the page may flash;<br/>no containers to offer
+    Note right of L: the page may flash —<br/>and there are no<br/>containers to offer
     end
 ```
 
