@@ -1,6 +1,6 @@
 {
   "name": "linkward",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "linkward — asks which Firefox container to open a link in, before it opens. Or just copies the URL.",
   "type": "module",
   "private": true,
