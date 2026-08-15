@@ -22,6 +22,9 @@
         access Firefox asks for. Until then every link opens as it always did.
       </p>
 
+      <!-- The master switch stays above every heading and outside every group:
+           until it is on, nothing below it does anything, and burying it under
+           a heading of its own would make it one setting among several. -->
       <label class="check">
         <input id="enabled" type="checkbox" />
         Ask before opening links from other applications
@@ -32,60 +35,78 @@
         container. Switching it off hands the access back.
       </p>
 
-      <label class="field">
-        <span>The "remember this host" box on the picker</span>
-        <!-- Three states, because two cannot say it: on, off, and not there at
-             all. A tick box could only ever offer the first two. -->
-        <select id="remember-prompt">
-          <option value="hidden">Do not show it</option>
-          <option value="unticked">Show it, unticked</option>
-          <option value="ticked">Show it, already ticked</option>
-        </select>
-      </label>
+      <!-- Grouped by the question each one answers, rather than by the order
+           they happened to be built in: when to ask, what the question looks
+           like, what has already been answered, and how to move it all. -->
+      <section>
+        <h2>When to ask</h2>
 
-      <label class="check">
-        <input id="ask-internal" type="checkbox" />
-        Ask about bookmarks and addresses I type myself
-      </label>
-      <p class="note">
-        Off, because a bookmark is not a link from somewhere else — you already said where it goes
-        by saving it. Nothing in the browser tells an extension these apart, so linkward goes by
-        whether the browser was <em>already in front</em> when the tab appeared. It gets that wrong
-        in two places, both listed in the
-        <a
-          href="https://github.com/sapn95/linkward#bookmarks-and-typed-addresses"
-          target="_blank"
-          rel="noreferrer"
-          >readme</a
-        >.
-      </p>
+        <label class="check">
+          <input id="ask-internal" type="checkbox" />
+          Ask about bookmarks and addresses I type myself
+        </label>
+        <!-- The sentence is filled in per browser — the two builds decide this
+             differently, and a page describing only one of them would be wrong
+             on the other (see options.js). The link is not: wherever the
+             reasoning ends up, it is written down in one place. -->
+        <p class="note">
+          <span id="internal-note"></span>
+          <a
+            href="https://github.com/sapn95/linkward#bookmarks-and-typed-addresses"
+            target="_blank"
+            rel="noreferrer"
+            >How linkward tells them apart</a
+          >
+        </p>
 
-      <h2>Never ask for</h2>
-      <p class="note">One host per line. Subdomains are included.</p>
-      <textarea id="never" rows="5" spellcheck="false"></textarea>
+        <label class="field">
+          <span>Never ask for</span>
+          <textarea id="never" rows="5" spellcheck="false"></textarea>
+        </label>
+        <p class="note">One host per line. Subdomains are included.</p>
+      </section>
 
-      <h2>Remembered sites</h2>
-      <p class="note">
-        Answered once on the picker and not asked about again. Change where one of them opens, or
-        drop it to be asked the next time.
-      </p>
-      <!-- Hidden until the list has been read: it would otherwise say
-           "nothing remembered" for a moment to somebody who has plenty. -->
-      <p class="note" id="rules-empty" hidden>Nothing remembered yet.</p>
-      <ul id="rules" class="rules"></ul>
+      <section>
+        <h2>The picker</h2>
+        <label class="field">
+          <span>The "remember this host" box</span>
+          <!-- Three states, because two cannot say it: on, off, and not there
+               at all. A tick box could only ever offer the first two. -->
+          <select id="remember-prompt">
+            <option value="hidden">Do not show it</option>
+            <option value="unticked">Show it, unticked</option>
+            <option value="ticked">Show it, already ticked</option>
+          </select>
+        </label>
+      </section>
 
-      <h2>Settings file</h2>
-      <p class="note">
-        Everything on this page, as JSON — to move to another browser, or to keep before changing
-        something.
-      </p>
-      <div class="row">
-        <button id="export" type="button">Export…</button>
-        <button id="import" type="button">Import…</button>
-        <!-- The real input is hidden and clicked by the button, because a bare
-             file input cannot be styled and reads as an unfinished page. -->
-        <input id="import-file" type="file" accept="application/json,.json" hidden />
-      </div>
+      <section>
+        <h2>Remembered sites</h2>
+        <p class="note">
+          Answered once on the picker and not asked about again. Change where one of them opens, or
+          drop it to be asked the next time.
+        </p>
+        <!-- Hidden until the list has been read: it would otherwise say
+             "nothing remembered" for a moment to somebody who has plenty. -->
+        <p class="note" id="rules-empty" hidden>Nothing remembered yet.</p>
+        <ul id="rules" class="rules"></ul>
+      </section>
+
+      <section>
+        <h2>Settings file</h2>
+        <p class="note">
+          Everything on this page, as JSON — to move to another browser, or to keep before changing
+          something.
+        </p>
+        <div class="row">
+          <button id="export" type="button">Export…</button>
+          <button id="import" type="button">Import…</button>
+          <!-- The real input is hidden and clicked by the button, because a
+               bare file input cannot be styled and reads as an unfinished
+               page. -->
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+        </div>
+      </section>
 
       <p class="note" id="honest"></p>
       <output id="status" class="status" hidden></output>

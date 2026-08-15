@@ -41,6 +41,20 @@ async function init() {
   // installed the way a constant in the source would.
   $('version').textContent = `linkward ${chrome.runtime.getManifest?.()?.version ?? ''}`.trim();
 
+  // The two builds decide this differently, and one sentence describing both
+  // would be wrong on one of them. Chromium answers outright; Firefox holds the
+  // request before anything has been said, so it goes by a proxy — and a page
+  // that claimed the proxy's precision on Chromium, or Chromium's precision on
+  // Firefox, would be lying about the one thing this box controls.
+  $('internal-note').textContent = isFirefox()
+    ? 'Off, because a bookmark is not a link from somewhere else — you already said where it ' +
+      'goes by saving it. Firefox says nothing about how a navigation started until after the ' +
+      'request has gone, and linkward holds it before that, so it goes by whether the browser ' +
+      'was already in front. That is a proxy, and it is wrong in two places listed in the readme.'
+    : 'Off, because a bookmark is not a link from somewhere else — you already said where it ' +
+      'goes by saving it. This browser says how each navigation started, so bookmarks, the ' +
+      'address bar and searches are recognised rather than guessed at.';
+
   $('honest').textContent = isFirefox()
     ? 'Firefox lets linkward stop the request before it is sent, so the page is never fetched.'
     : 'Chrome removed the ability to stop a request, so linkward can only turn the tab around ' +

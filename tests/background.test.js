@@ -85,9 +85,31 @@ function makeChrome({
   }
   if (granted) {
     if (firefox) c.webRequest = { onBeforeRequest: makeEvent() };
-    else c.webNavigation = { onBeforeNavigate: makeEvent() };
+    // onCommitted, not onBeforeNavigate: it is the only event that carries
+    // transitionType, and without it the Chrome build is back to guessing
+    // whether a new tab came from another application or from the address bar.
+    else c.webNavigation = { onCommitted: makeEvent() };
   }
   return c;
+}
+
+/**
+ * One committed navigation on the Chrome build.
+ *
+ * `transitionType` defaults to `link`, which is what a hand-off from another
+ * application looks like — and byte for byte what a click on a page looks like
+ * too, which is why the rest of the exclusions still have to do their work.
+ */
+async function navigated(c, over = {}) {
+  await c.webNavigation.onCommitted.emit({
+    frameId: 0,
+    tabId: 7,
+    url: 'https://example.com/doc',
+    transitionType: 'link',
+    transitionQualifiers: [],
+    ...over,
+  });
+  await settle();
 }
 
 async function boot(options) {
@@ -157,7 +179,7 @@ describe('arming', () => {
     vi.resetModules();
     await import('../src/background.js');
     await settle();
-    expect(c.webNavigation.onBeforeNavigate.size()).toBe(1);
+    expect(c.webNavigation.onCommitted.size()).toBe(1);
   });
 
   it('arms as soon as the permission arrives, without a restart', async () => {
@@ -190,11 +212,7 @@ describe('arming', () => {
 
     const cr = await boot({ firefox: false });
     await cr.tabs.onCreated.emit({ id: 7 });
-    await cr.webNavigation.onBeforeNavigate.emit({
-      frameId: 0,
-      tabId: 7,
-      url: 'https://example.com/doc',
-    });
+    await navigated(cr);
     expect(cr.tabs.update).toHaveBeenCalledWith(7, {
       url: expect.stringContaining('chrome-extension://linkward/pick/pick.html'),
     });
@@ -360,10 +378,7 @@ describe('a host the user already answered for', () => {
 
 describe('the same, on Chrome', () => {
   /** Chrome answers by turning the tab around; there is nothing to cancel. */
-  async function navigate(c, url = 'https://example.com/doc', tabId = 7) {
-    await c.webNavigation.onBeforeNavigate.emit({ frameId: 0, tabId, url });
-    await settle();
-  }
+  const navigate = (c, url = 'https://example.com/doc', tabId = 7) => navigated(c, { url, tabId });
 
   it('never opens a container, because Chrome has none to open', async () => {
     // A rule synced from Firefox names a container this browser cannot produce.
@@ -396,12 +411,7 @@ describe('the same, on Chrome', () => {
   it('ignores a sub-frame, which is not a link anybody handed the browser', async () => {
     const c = await boot({ firefox: false, settings: { enabled: true } });
     await c.tabs.onCreated.emit({ id: 7 });
-    await c.webNavigation.onBeforeNavigate.emit({
-      frameId: 3,
-      tabId: 7,
-      url: 'https://ads.example/frame',
-    });
-    await settle();
+    await navigated(c, { frameId: 3, url: 'https://ads.example/frame' });
     expect(c.tabs.update).not.toHaveBeenCalled();
   });
 
@@ -656,9 +666,10 @@ describe('a bookmark, or an address typed into a new tab', () => {
   // opener, navigating within seconds — and `transitionType`, the field that
   // names them, only exists on onCommitted, after the request has gone.
   //
-  // So what is asked instead is whether the browser was ALREADY in front. A
-  // bookmark is somebody using the browser; a hand-off is the browser being
-  // brought to the front to receive something.
+  // The two builds answer it differently now, each with the best evidence its
+  // browser offers. Chromium's answers are in the describe below this one;
+  // these are the Firefox ones, where nothing before the request says how a
+  // navigation started, so it asks who brought the browser to the front.
 
   /** The browser has been in front, untouched, for `ms`. */
   async function inFrontFor(c, ms) {
@@ -683,17 +694,15 @@ describe('a bookmark, or an address typed into a new tab', () => {
     expect(await ask(c, {})).toEqual({});
   });
 
-  it('is left alone on Chrome', async () => {
+  it('does not spend a service worker wake-up on focus, where nothing reads it', async () => {
+    // Every listener is one the browser starts the background page FOR. On
+    // Chromium the transition answers this outright, so a focus listener there
+    // would wake a service worker on every switch between applications to
+    // record something nothing looks at.
     const c = await boot({ firefox: false });
-    await inFrontFor(c, 30_000);
-    await c.tabs.onCreated.emit({ id: 7 });
-    await c.webNavigation.onBeforeNavigate.emit({
-      frameId: 0,
-      tabId: 7,
-      url: 'https://example.com/doc',
-    });
-    await settle();
-    expect(c.tabs.update).not.toHaveBeenCalled();
+    expect(c.windows.onFocusChanged.size()).toBe(0);
+    const ff = await boot({ firefox: true });
+    expect(ff.windows.onFocusChanged.size()).toBe(1);
   });
 
   it('does not stop a real hand-off being asked about, on Firefox', async () => {
@@ -703,21 +712,6 @@ describe('a bookmark, or an address typed into a new tab', () => {
     await handedOver(c);
     await c.tabs.onCreated.emit({ id: 7 });
     expect(await ask(c, {})).toHaveProperty('redirectUrl');
-  });
-
-  it('does not stop a real hand-off being asked about, on Chrome', async () => {
-    const c = await boot({ firefox: false });
-    await handedOver(c);
-    await c.tabs.onCreated.emit({ id: 7 });
-    await c.webNavigation.onBeforeNavigate.emit({
-      frameId: 0,
-      tabId: 7,
-      url: 'https://example.com/doc',
-    });
-    await settle();
-    expect(c.tabs.update).toHaveBeenCalledWith(7, {
-      url: expect.stringContaining('pick/pick.html'),
-    });
   });
 
   it('still asks for a link that arrives while the browser stays in the background', async () => {
@@ -794,19 +788,6 @@ describe('a bookmark, or an address typed into a new tab', () => {
     expect(await ask(c, {})).toHaveProperty('redirectUrl');
   });
 
-  it('asks about everything again when the setting says to, on Chrome', async () => {
-    const c = await boot({ firefox: false, settings: { enabled: true, askInternal: true } });
-    await inFrontFor(c, 30_000);
-    await c.tabs.onCreated.emit({ id: 7 });
-    await c.webNavigation.onBeforeNavigate.emit({
-      frameId: 0,
-      tabId: 7,
-      url: 'https://example.com/doc',
-    });
-    await settle();
-    expect(c.tabs.update).toHaveBeenCalled();
-  });
-
   it('treats a stored non-boolean as off, not as on', async () => {
     // Settings come off disk and can hold anything. The string "false" is
     // truthy, and coercing it would switch the interception back on for every
@@ -815,6 +796,91 @@ describe('a bookmark, or an address typed into a new tab', () => {
     await inFrontFor(c, 30_000);
     await c.tabs.onCreated.emit({ id: 7 });
     expect(await ask(c, {})).toEqual({});
+  });
+});
+
+describe('on Chromium, where the browser says how the navigation started', () => {
+  // Reported from Vivaldi, after the focus proxy had already shipped: copy a
+  // link somewhere, switch to the browser, paste it into the address bar — and
+  // linkward asked. It could not have done otherwise. That is a tab created a
+  // second after the browser came to the front, which is precisely what a
+  // hand-off looks like from outside, so no amount of tuning separates them.
+  //
+  // onCommitted carries transitionType and transitionQualifiers, and with those
+  // it is not a guess. The price is that the navigation has committed by then
+  // and the page can flash — which on this browser costs little, because MV3
+  // removed blocking webRequest and nothing here could hold the request anyway.
+
+  const asked = (c) => c.tabs.update.mock.calls.length > 0;
+
+  async function commit(over) {
+    const c = await boot({ firefox: false });
+    await c.tabs.onCreated.emit({ id: 7 });
+    await navigated(c, over);
+    return c;
+  }
+
+  it('leaves a pasted address alone', async () => {
+    // THE report. `typed` is what Chromium calls a URL entered in the address
+    // bar, pasted or keyed in.
+    expect(asked(await commit({ transitionType: 'typed' }))).toBe(false);
+  });
+
+  it('leaves it alone even when the address bar resolved it to a link', async () => {
+    // Paste something the omnibox recognises from history and the type can come
+    // back as `link` with the qualifier set instead. The qualifier is the
+    // reliable half, so it is checked first.
+    const c = await commit({
+      transitionType: 'link',
+      transitionQualifiers: ['from_address_bar'],
+    });
+    expect(asked(c)).toBe(false);
+  });
+
+  it.each(['auto_bookmark', 'generated', 'keyword', 'keyword_generated', 'reload', 'start_page'])(
+    'leaves %s alone',
+    async (transitionType) => {
+      expect(asked(await commit({ transitionType }))).toBe(false);
+    },
+  );
+
+  it('still asks for a link, which is what a hand-off looks like', async () => {
+    // The half that must not break. `link` is what another application's
+    // hand-off produces — and a click on a page, which the opener and freshness
+    // rules are there to remove.
+    expect(asked(await commit({ transitionType: 'link' }))).toBe(true);
+  });
+
+  it('still asks for a transition it has never heard of', async () => {
+    // The list names what to EXCLUDE. A Chromium that invents a new type leaves
+    // linkward asking, exactly as it does today — rather than going quiet on a
+    // string nobody has looked at.
+    expect(asked(await commit({ transitionType: 'teleported' }))).toBe(true);
+  });
+
+  it('asks about all of them when the setting says to', async () => {
+    const c = await boot({ firefox: false, settings: { enabled: true, askInternal: true } });
+    await c.tabs.onCreated.emit({ id: 7 });
+    await navigated(c, { transitionType: 'typed' });
+    expect(asked(c)).toBe(true);
+  });
+
+  it('does not read the focus state at all', async () => {
+    // The browser has already answered. Layering the proxy on top could only
+    // suppress a hand-off Chromium had just named as one.
+    const c = await boot({ firefox: false });
+    await c.windows.onFocusChanged.emit(1);
+    await settle();
+    vi.advanceTimersByTime(30_000);
+    await c.tabs.onCreated.emit({ id: 7 });
+    await navigated(c, { transitionType: 'link' });
+    expect(asked(c)).toBe(true);
+  });
+
+  it('does not reconsider a tab it has already left alone', async () => {
+    const c = await commit({ transitionType: 'typed' });
+    await navigated(c, { transitionType: 'link', url: 'https://elsewhere.example/' });
+    expect(asked(c)).toBe(false);
   });
 });
 

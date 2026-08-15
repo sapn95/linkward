@@ -54,6 +54,34 @@ h1 {
   font-size: 20px;
 }
 
+/* The settings page, grouped by the question each block answers. A rule above
+   each heading does the separating, so the groups read as groups without a box
+   around every one of them — five boxes down a narrow page is louder than the
+   content inside them. */
+section {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+section h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* The first thing under a heading should sit against it, not a paragraph gap
+   below: `.note` and `.check` both carry their own top margin for the times
+   they follow something. */
+section h2 + .note,
+section h2 + .check,
+section h2 + .field {
+  margin-top: 12px;
+}
+
 /* The whole URL, wrapped rather than truncated: this is the one thing the user
  * has to judge before deciding, and a shortened URL hides the host. */
 .url {

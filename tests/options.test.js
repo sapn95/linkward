@@ -231,14 +231,30 @@ describe('bookmarks and addresses typed in this browser', () => {
     expect(stored().neverAsk).toEqual(['example.com']);
   });
 
-  it('says what it cannot tell apart instead of claiming it can', async () => {
-    // The rule behind this box is a proxy — whether the browser was already in
-    // front — and it is wrong in two named places. A tick box that implied
-    // otherwise would be the page lying about the one thing it does.
-    await mount({ granted: true });
-    const note = $('ask-internal').closest('label').nextElementSibling;
-    expect(note.textContent).toMatch(/already in front/i);
-    expect(note.querySelector('a')?.href).toMatch(/github\.com\/sapn95\/linkward/);
+  it('admits on Firefox that the rule behind it is a proxy', async () => {
+    // There, linkward holds the request before anything has been said about how
+    // the navigation started, so it goes by whether the browser was already in
+    // front — and that is wrong in two named places. A page that implied
+    // otherwise would be lying about the one thing this box controls.
+    await mount({ firefox: true, granted: true });
+    expect($('internal-note').textContent).toMatch(/already in front/i);
+    expect($('internal-note').textContent).toMatch(/proxy/i);
+  });
+
+  it('says on Chrome that the browser answers outright, because it does', async () => {
+    // Claiming the Firefox proxy here would undersell it, and claiming this
+    // precision on Firefox would oversell it. Neither sentence is written twice.
+    await mount({ firefox: false, granted: true });
+    expect($('internal-note').textContent).toMatch(/says how each navigation started/i);
+    expect($('internal-note').textContent).not.toMatch(/already in front|proxy/i);
+  });
+
+  it('links to the reasoning from either build', async () => {
+    for (const firefox of [true, false]) {
+      await mount({ firefox, granted: true });
+      const link = $('internal-note').closest('p').querySelector('a');
+      expect(link?.href).toContain('#bookmarks-and-typed-addresses');
+    }
   });
 });
 

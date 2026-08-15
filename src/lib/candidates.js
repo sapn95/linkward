@@ -103,12 +103,19 @@ export function shouldAsk(
 //
 // The field that names them is `transitionType` — `auto_bookmark`, `typed`,
 // `link` — and it exists ONLY on webNavigation.onCommitted, which is after the
-// request has gone. Firefox's blocking webRequest has no equivalent at all, and
-// that build is the one where interception is exact; a fix that moved the
-// decision to onCommitted would take away the reason to use it.
+// request has gone. So the two builds answer this differently, each with the
+// best evidence its browser actually offers:
 //
-// So: the one thing that is knowable BEFORE the request, on both browsers, and
-// that actually differs between the four.
+//   Chromium  waits for onCommitted and BELIEVES IT. Nothing there could hold
+//             the request anyway — MV3 removed blocking webRequest — so waiting
+//             costs a page flash and buys an exact answer. See
+//             transitionIsInternal below.
+//   Firefox   holds the request before it is sent, which is the reason to use
+//             that build, and gets no transition data at that point. It falls
+//             back to the proxy below.
+//
+// The proxy: the one thing knowable BEFORE a request, on both browsers, that
+// differs between the four.
 //
 // A bookmark, an address bar, a history entry — all of them are somebody
 // already in the browser, using the browser. A link from another application
@@ -119,6 +126,51 @@ export function shouldAsk(
 // It is a proxy, not the fact, and it is wrong in two places named in the
 // README. Both err towards asking, which is the direction the rest of this file
 // errs in too.
+
+/**
+ * The transitions a link handed over by another application can never be.
+ *
+ * Chromium says outright how a navigation started, and once it has said so
+ * there is nothing to guess. `link` is the only one an external hand-off
+ * produces — byte for byte the same as a click on a page, which is the whole
+ * problem — so everything else is somebody working in the browser.
+ *
+ * A type NOT on this list is treated as a hand-off, which is why it lists what
+ * to exclude rather than what to accept: a Chromium that invents a new type
+ * leaves linkward asking, exactly as it does today.
+ */
+export const INTERNAL_TRANSITIONS = new Set([
+  'typed', // the address bar — including a pasted URL
+  'generated', // the address bar, where what you typed was not a URL
+  'auto_bookmark', // a bookmark, or an item in the history menu
+  'keyword', // a search keyword
+  'keyword_generated',
+  'reload',
+  'form_submit',
+  'start_page',
+  'auto_toplevel', // what Firefox calls its start page
+]);
+
+/** The qualifier Chromium sets for anything that came out of the address bar. */
+export const ADDRESS_BAR = 'from_address_bar';
+
+/**
+ * Did the browser say this started inside itself?
+ *
+ * @param {{transitionType?: string, transitionQualifiers?: string[]}} details
+ * @returns {boolean|undefined} undefined when the browser said nothing, which
+ *   is every Firefox `webRequest` event — there is no transition data before a
+ *   request is sent, and that is the build where the request is held.
+ */
+export function transitionIsInternal(details) {
+  const type = details?.transitionType;
+  if (typeof type !== 'string' || !type) return undefined;
+  const qualifiers = details.transitionQualifiers;
+  // The address bar sets this even when the type is `link`, which happens when
+  // what you pasted was resolved from history rather than typed out.
+  if (Array.isArray(qualifiers) && qualifiers.includes(ADDRESS_BAR)) return true;
+  return INTERNAL_TRANSITIONS.has(type);
+}
 
 /**
  * How long after the browser comes to the front a new tab still counts as the
