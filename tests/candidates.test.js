@@ -14,6 +14,8 @@ import {
   isInterceptable,
   matchesAny,
   startedInsideBrowser,
+  transitionIsInternal,
+  INTERNAL_TRANSITIONS,
   FOCUS_GRACE_MS,
 } from '../src/lib/candidates.js';
 
@@ -174,6 +176,75 @@ describe('a tab the browser opened for itself', () => {
     // asking at all on a browser that fills the URL in later.
     expect(isCandidateTab({ id: 1 })).toBe(true);
     expect(isCandidateTab({ id: 1, url: '' })).toBe(true);
+  });
+});
+
+describe('transitionIsInternal', () => {
+  // Chromium says outright how a navigation started. Where it has said so there
+  // is nothing left to infer, so this is the only rule in the file that answers
+  // from evidence rather than from exclusion — and the only one that can say
+  // "the browser did not tell me", which is every Firefox request.
+
+  it('names the address bar, which is what was reported', () => {
+    expect(transitionIsInternal({ transitionType: 'typed' })).toBe(true);
+    expect(transitionIsInternal({ transitionType: 'generated' })).toBe(true);
+  });
+
+  it('takes the qualifier even when the type says link', () => {
+    // Paste something the omnibox resolves out of history and the type can come
+    // back as `link`. The qualifier is the half that still tells the truth, so
+    // it is checked before the type.
+    expect(
+      transitionIsInternal({
+        transitionType: 'link',
+        transitionQualifiers: ['from_address_bar'],
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores qualifiers that say nothing about who started it', () => {
+    for (const q of [['server_redirect'], ['client_redirect', 'forward_back'], []]) {
+      expect(transitionIsInternal({ transitionType: 'link', transitionQualifiers: q })).toBe(false);
+    }
+  });
+
+  it.each([...INTERNAL_TRANSITIONS])('says %s started in the browser', (transitionType) => {
+    expect(transitionIsInternal({ transitionType })).toBe(true);
+  });
+
+  it('says link did not, because that is what a hand-off looks like', () => {
+    // The single most important line here. `link` is what another application's
+    // hand-off produces, and treating it as internal would switch the extension
+    // off without a word.
+    expect(transitionIsInternal({ transitionType: 'link' })).toBe(false);
+    expect(INTERNAL_TRANSITIONS.has('link')).toBe(false);
+  });
+
+  it('asks about a type it has never heard of', () => {
+    // The set names what to EXCLUDE, so an unknown string errs towards asking.
+    // The other way round, one new Chromium transition would silently stop the
+    // extension doing its job.
+    for (const transitionType of ['teleported', 'auto_subframe_v2', 'x']) {
+      expect(transitionIsInternal({ transitionType })).toBe(false);
+    }
+  });
+
+  it('answers undefined when the browser said nothing', () => {
+    // Not false. Firefox has no transition data before a request is sent, and
+    // "no answer" has to stay distinguishable from "no, it was external" — the
+    // caller falls back to the focus proxy on the first and not on the second.
+    expect(transitionIsInternal({})).toBeUndefined();
+    expect(transitionIsInternal(undefined)).toBeUndefined();
+    expect(transitionIsInternal({ transitionType: '' })).toBeUndefined();
+    expect(transitionIsInternal({ transitionType: 7 })).toBeUndefined();
+    expect(transitionIsInternal({ transitionQualifiers: ['from_address_bar'] })).toBeUndefined();
+  });
+
+  it('survives a qualifier list that is not a list', () => {
+    expect(transitionIsInternal({ transitionType: 'link', transitionQualifiers: 'x' })).toBe(false);
+    expect(transitionIsInternal({ transitionType: 'typed', transitionQualifiers: null })).toBe(
+      true,
+    );
   });
 });
 

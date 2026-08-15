@@ -107,26 +107,19 @@ new tab, an `http(s)` address, no opener, navigating within a few seconds:
 
 The field that names them is `transitionType` — `auto_bookmark`, `typed`,
 `link` — and it exists **only on `webNavigation.onCommitted`**, which fires
-after the request has already gone. Firefox's blocking `webRequest` has no
-equivalent at all, and that is the build where the interception is exact;
-moving the decision to `onCommitted` would take away the reason to use it.
-
-So linkward asks the one question that is answerable **before** the request, on
-both browsers, and that actually differs between the four: **was the browser
-already in front?** A bookmark, the address bar, a history entry — all of them
-are somebody who is already in the browser, using it. A link from another
-application is by definition somebody who was _not_: they were in Slack, and
-the browser is being brought to the front to receive it.
-[`windows.onFocusChanged`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/windows/onFocusChanged)
-says which of the two just happened. It needs no permission on either browser.
+after the request has already gone. **The two builds therefore answer this
+differently**, each with the best evidence its browser actually offers:
 
 ```mermaid
 flowchart TD
-    S["New tab, http(s) address,<br/>no opener, first navigation"] --> Q{"How long had the<br/>browser been in front<br/>when the tab appeared?"}
-    Q -->|"longer than 1.5s"| IN["Started in here:<br/>bookmark, address bar, history"]
-    Q -->|"it had just come to the front"| OUT["Handed over by<br/>another application"]
-    Q -->|"it is still behind something else"| OUT
-    Q -->|"nothing recorded"| OUT
+    S["New tab, http(s) address,<br/>no opener, first navigation"] --> B{"Which build?"}
+    B -->|Chromium| T{"What does<br/>transitionType say?"}
+    T -->|"typed, generated, auto_bookmark,<br/>keyword, reload, start_page …<br/>or the from_address_bar qualifier"| IN["Started in here"]
+    T -->|"link, or anything unknown"| OUT["Handed over by<br/>another application"]
+    B -->|Firefox| Q{"How long had the<br/>browser been in front<br/>when the tab appeared?"}
+    Q -->|"longer than 1.5s"| IN
+    Q -->|"it had just come to the front"| OUT
+    Q -->|"still behind something else,<br/>or nothing recorded"| OUT
     IN --> L["Left alone"]
     OUT --> P["Ask where it should open"]
     L -.->|"setting: ask about<br/>these too"| P
@@ -135,8 +128,28 @@ flowchart TD
     style L fill:#eaf1ff,color:#16181d
 ```
 
-It is a proxy, not the fact, and it is wrong in two places. Both are named here
-rather than left to be discovered:
+**Chromium waits for `onCommitted` and believes it.** Nothing on that side could
+hold the request anyway — MV3 removed blocking `webRequest`, so the earlier
+`onBeforeNavigate` only ever raced the navigation it was reacting to. Waiting
+costs a page flash and buys an exact answer, which is a good trade when the
+alternative is guessing. The list in `candidates.js` names what to **exclude**,
+so a Chromium that invents a new transition leaves linkward asking rather than
+going quiet on a string nobody has looked at.
+
+**Firefox holds the request before it is sent** — the reason to use that build —
+and at that moment the browser has said nothing about how the navigation
+started. So it falls back to the one question that _is_ answerable beforehand
+and that differs between the four: **was the browser already in front?** A
+bookmark, the address bar, a history entry are all somebody already in the
+browser, using it. A link from another application is by definition somebody who
+was _not_: they were in Slack, and the browser is being brought to the front to
+receive it.
+[`windows.onFocusChanged`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/windows/onFocusChanged)
+says which just happened, and needs no permission.
+
+That fallback is a proxy, not the fact, and it is wrong in two places. Both are
+named here rather than left to be discovered. **Neither applies to the Chromium
+build**, which does not ask the question at all:
 
 - **A link that arrives without raising the browser** — `open -g`, a cron job, a
   script — looks like something you did in here, and is not asked about.
@@ -159,6 +172,12 @@ file errs in too. And if the browser will not say — no `windows` API, no
 `storage.session` to keep the answer in across an event page the browser tears
 down when it likes — the answer is "we do not know", which behaves exactly like
 linkward did before any of this: it asks.
+
+> The proxy shipped first, on both builds, and the report that followed is why
+> Chromium no longer uses it: _copy a link somewhere, switch to the browser,
+> paste it into the address bar_ — a tab created a second after the browser came
+> to the front, which is exactly what a hand-off looks like. No grace period
+> separates those two, which is what "proxy" means.
 
 **Settings → Ask about bookmarks and addresses I type myself** turns the whole
 rule off, for people who would rather be interrupted than miss one. It is off.
@@ -183,11 +202,11 @@ sequenceDiagram
     end
 
     rect rgba(128, 128, 128, 0.12)
-    Note over App,S: Chrome — it cannot be held
+    Note over App,S: Chrome — it cannot be held, so it waits to be sure
     App->>B: open this link
-    B->>L: onBeforeNavigate
-    Note right of L: fires first, but cannot<br/>hold anything: MV3 has<br/>no blocking form
-    B->>S: request goes while linkward decides
+    B->>S: request goes — MV3 has no blocking form,<br/>so nothing here could stop it
+    B->>L: onCommitted, with transitionType
+    Note right of L: waits for this on purpose:<br/>it is the only event that says<br/>HOW the navigation started
     L->>B: turn the tab around
     Note right of L: the page may flash —<br/>and there are no<br/>containers to offer
     end
@@ -197,7 +216,10 @@ Two things are different, and the picker says both on the page rather than
 hiding them:
 
 - **Chrome MV3 removed blocking `webRequest`**, so linkward can only turn the
-  tab around once the navigation has begun. The page may flash.
+  tab around once the navigation has begun. The page may flash. Since nothing
+  there can hold a request either way, the Chrome build waits for `onCommitted`
+  and takes the browser's own `transitionType` rather than guessing — see
+  [bookmarks and typed addresses](#bookmarks-and-typed-addresses).
 - **No extension can open a tab in another Chrome profile.** `tabs.create`
   takes a window to aim at and no profile, because an extension in one profile
   cannot see that the others exist. A profile can only be chosen before the

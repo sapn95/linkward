@@ -80,18 +80,45 @@ describe('what the README says about bookmarks and typed addresses', () => {
     }
   });
 
-  it('says why the field that would settle it cannot be used', () => {
+  it('says why the field that would settle it arrives late', () => {
     // Somebody will suggest transitionType. The answer has to survive being
-    // asked again in six months.
+    // asked again in six months — and half of it is now "we use it anyway".
     expect(section).toMatch(/transitionType/);
     expect(section).toMatch(/only on `webNavigation\.onCommitted`/i);
     expect(section).toMatch(/after the request has already gone/i);
   });
 
-  it('says what is used instead, and that it is a proxy', () => {
+  it('says the two builds answer it differently, and why that is not a fudge', () => {
+    // The asymmetry is the design, not an oversight, so it is stated before
+    // either half is described.
+    expect(section).toMatch(/two builds therefore answer this\s+differently/i);
+    expect(section).toMatch(/best evidence its browser actually offers/i);
+  });
+
+  it('says Chromium takes the browser at its word, and what that costs', () => {
+    expect(section).toMatch(/Chromium waits for `onCommitted` and believes it/i);
+    expect(section).toMatch(/only ever raced the navigation/i);
+    expect(section).toMatch(/costs a page flash/i);
+    // The direction an unknown transition errs in is the whole safety argument.
+    expect(section).toMatch(/names what to \*{0,2}exclude/i);
+  });
+
+  it('says Firefox falls back to a proxy, and calls it one', () => {
     expect(section).toMatch(/was the browser \*{0,2}already in front/i);
     expect(section).toMatch(/windows\.onFocusChanged/);
     expect(section).toMatch(/proxy, not the fact/i);
+    // And that the two named failures are Firefox's alone, or a Chromium user
+    // reads limits that do not apply to them.
+    expect(section).toMatch(/Neither applies to the Chromium\s+build/i);
+  });
+
+  it('keeps the report that forced the split, because it explains the word proxy', () => {
+    // Whitespace-normalised, and this one is a BLOCKQUOTE — the `>` markers
+    // survive the normalising, so a pattern that straddles a line break has to
+    // allow for them. Easier to match inside one line.
+    expect(section).toMatch(/paste it into the address bar/i);
+    expect(section).toMatch(/exactly what a hand-off looks like/i);
+    expect(section).toMatch(/separates those two/i);
   });
 
   it('names the two cases it gets wrong rather than leaving them to be found', () => {

@@ -11,7 +11,13 @@
 // needs (`<all_urls>` above all) are requested from the options page and can be
 // handed back, and no listener is registered while they are absent.
 
-import { shouldAsk, isCandidateTab, matchesAny, startedInsideBrowser } from './lib/candidates.js';
+import {
+  shouldAsk,
+  isCandidateTab,
+  matchesAny,
+  startedInsideBrowser,
+  transitionIsInternal,
+} from './lib/candidates.js';
 import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js';
 import { isFirefox, listContainers, resolveRule } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
@@ -111,11 +117,23 @@ async function decide(details) {
   // see startedInsideBrowser. Measured at `since`, the moment the tab was
   // created, because by now the browser is in front either way.
   if (!settings.askInternal) {
-    // readFocusState answers `{}` rather than rejecting, on purpose and with a
-    // test of its own: this is inside a blocking listener, and a rejection here
-    // would be holding up somebody's page.
-    const focus = await readFocusState();
-    if (startedInsideBrowser(focus, { at: since ?? Date.now() })) return null;
+    // The browser's own answer first, where there is one. On Chromium this
+    // comes from onCommitted and is exact, so nothing below it runs: adding the
+    // proxy on top could only suppress a hand-off the browser had already
+    // named as one.
+    const told = transitionIsInternal(details);
+    if (told !== undefined) {
+      if (told) return null;
+    } else {
+      // Firefox, before the request is sent. No transition data exists yet, so
+      // this falls back to asking who brought the browser to the front.
+      //
+      // readFocusState answers `{}` rather than rejecting, on purpose and with
+      // a test of its own: this is inside a blocking listener, and a rejection
+      // here would be holding up somebody's page.
+      const focus = await readFocusState();
+      if (startedInsideBrowser(focus, { at: since ?? Date.now() })) return null;
+    }
   }
 
   // A remembered host is the whole point of the tick box on the picker, and
@@ -241,25 +259,43 @@ function onBeforeRequest(details) {
   });
 }
 
-// --- Chrome: turn the tab around as early as it allows ---------------------
-// Synchronous for the same reason: a service worker is stopped when idle and
+// --- Chrome: wait for the browser to say how the navigation started --------
+//
+// This listens to onCommitted, NOT onBeforeNavigate, and that is a deliberate
+// trade rather than an oversight.
+//
+// onBeforeNavigate is earlier and carries no `transitionType`, so the Chrome
+// build had to guess whether a new tab was a hand-off or the address bar — and
+// it guessed wrong in the one case that matters most: copy a link somewhere,
+// switch to the browser, paste. That is a tab created seconds after the browser
+// came to the front, which is exactly what a hand-off looks like from outside.
+// No amount of tuning separates the two, because nothing before the request
+// distinguishes them.
+//
+// onCommitted carries `transitionType` and `transitionQualifiers`, and with
+// them the answer is not a guess at all. The cost is that the navigation has
+// committed by the time linkward acts, so the page can flash. On this browser
+// that costs less than it sounds: MV3 removed blocking webRequest, so nothing
+// here could ever hold the request back — the old listener only ever raced it.
+//
+// Synchronous for the usual reason: a service worker is stopped when idle and
 // restarted for its listeners, and only the ones registered on the first run
 // can restart it.
 function armChrome() {
   if (isFirefox()) return;
   try {
-    if (chrome.webNavigation.onBeforeNavigate.hasListener(onBeforeNavigate)) return;
-    chrome.webNavigation.onBeforeNavigate.addListener(onBeforeNavigate);
+    if (chrome.webNavigation.onCommitted.hasListener(onCommitted)) return;
+    chrome.webNavigation.onCommitted.addListener(onCommitted);
   } catch {
     // Same as above: no webNavigation permission yet.
   }
 }
 
-async function onBeforeNavigate(details) {
+async function onCommitted(details) {
   if (details.frameId !== 0) return;
   // webNavigation gives no originUrl, so the document check in shouldAsk cannot
-  // apply. The candidate flag and the freshness window carry it alone here,
-  // which is why the Chrome build asks in more situations than the Firefox one.
+  // apply. The candidate flag, the freshness window and the transition carry it
+  // here instead.
   const action = await decide({ ...details, type: 'main_frame' });
   // Chrome has no containers, so a rule can only ever resolve to "no container"
   // here — which means letting the navigation it already started carry on.
@@ -284,6 +320,12 @@ function onFocusChanged(windowId) {
 }
 
 function armFocus() {
+  // Firefox only, now that Chromium answers the question outright at
+  // onCommitted. It is not free: every listener here is one the browser starts
+  // the background page FOR, so keeping it on Chromium would wake a service
+  // worker on every switch between applications to record something nothing
+  // reads any more.
+  if (!isFirefox()) return;
   try {
     if (!chrome.windows.onFocusChanged.hasListener(onFocusChanged)) {
       chrome.windows.onFocusChanged.addListener(onFocusChanged);
