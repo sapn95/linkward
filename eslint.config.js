@@ -22,7 +22,10 @@ export default [
     languageOptions: { globals: { ...globals.node } },
   },
   {
-    files: ['tests/**/*.js'],
+    // .mjs too: the AMO fake is loaded with `node --import`, which wants an
+    // unambiguous module extension, and without this it lands in the browser
+    // block above and every `process` in it reads as undefined.
+    files: ['tests/**/*.{js,mjs}'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 ];
