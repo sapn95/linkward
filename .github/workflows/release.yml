@@ -475,6 +475,7 @@ jobs:
           echo "::warning::Not submitted to AMO — the Chrome Web Store could not take this version, and shipping it to one store only would leave the two on different versions. Re-run with the 'tag' input once Chrome frees up and both go together."
 
       - name: Sign & publish to Firefox AMO
+        id: sign
         if: ${{ !cancelled() && steps.amo.outputs.ready == 'true' && steps.cwspublish.outputs.blocked != 'in_review' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
@@ -515,3 +516,34 @@ jobs:
             exit 1
           fi
           echo "$out"
+
+      # The listing icon and the screenshots, which web-ext cannot upload and
+      # AMO does not read from the package — with neither, a signed add-on sits
+      # in the store behind a grey placeholder.
+      #
+      # Firefox only, deliberately: it reads dist-firefox/ and docs/store/amo/,
+      # and the Chrome half of this repo has its own listing, its own screenshot
+      # and no API that would take either. Running it after the Chrome step
+      # instead would sync a Mozilla listing off the back of a Google publish.
+      #
+      # Gated on the sign step SUCCEEDING, and only on that: it is what creates
+      # the add-on on a first release, so there is nothing to attach art to
+      # before it. A skipped sign — secrets absent, or Chrome holding Firefox
+      # back — leaves outcome != success and skips this too, so neither guard
+      # above is repeated here.
+      #
+      # The script is deliberately quiet about the things that are not our
+      # failure — no add-on yet, AMO read-only, uploads switched off — and loud
+      # about everything else, for the same reason the step above is: a release
+      # that reports success without reaching AMO is the one outcome worth
+      # refusing.
+      - name: Upload the AMO listing art
+        # Its own budget, because it is last in a job whose earlier steps can
+        # legitimately spend nearly the whole 30 minutes, and because it is the
+        # one step here that is mid-flight on a live listing when it is killed.
+        timeout-minutes: 8
+        if: ${{ !cancelled() && steps.sign.outcome == 'success' }}
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npm run amo:art

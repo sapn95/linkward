@@ -64,6 +64,11 @@ await box.locator('input[name="support_url_en-us"]').fill(`https://github.com/sa
 await save(box);
 
 step('icon and screenshot');
+// scripts/amo-art.mjs owns both of these now, over the API, on every release.
+// This half is what fills a listing that has never had a release — and it stays
+// because the description and the links below have no API at all, so the run
+// happens anyway.
+//
 // Two separate uploaders share this section, and picking one by position gets
 // it wrong: the first run uploaded a screenshot and left the add-on with no
 // icon at all. Both are addressed by name.
@@ -74,8 +79,10 @@ await page.waitForTimeout(6000);
 if (!hadScreenshot) {
   // Uploading again would add a SECOND copy rather than replace the first.
   // The Firefox picture: containers, which is the half of linkward that only
-  // works here.
-  await box.locator('input[name="uploads"]').setInputFiles('docs/store/01-picker.png');
+  // works here. It lives under docs/store/amo/ because the Chrome one is its
+  // twin apart from that, one directory up, and a path is the only thing that
+  // tells the two apart reliably.
+  await box.locator('input[name="uploads"]').setInputFiles('docs/store/amo/01-picker.png');
   await page.waitForTimeout(6000);
 }
 const caption = box.locator('textarea[name="files-0-caption_en-us"]');

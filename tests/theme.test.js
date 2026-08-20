@@ -7,7 +7,7 @@
 // mode" usually turns out to mean.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CSS = readFileSync(join(process.cwd(), 'src/pick/pick.css'), 'utf8');
@@ -120,7 +120,17 @@ describe('the store screenshots', () => {
   it('uploads each to the store it belongs to', () => {
     const toChrome = readFileSync(join(process.cwd(), 'scripts/store/fill-listing.mjs'), 'utf8');
     const toAmo = readFileSync(join(process.cwd(), 'scripts/store/amo-listing.mjs'), 'utf8');
-    expect(toChrome).toContain('01-picker-chrome.png');
-    expect(toAmo).toMatch(/setInputFiles\('docs\/store\/01-picker\.png'\)/);
+    expect(toChrome).toContain('docs/store/01-picker-chrome.png');
+    expect(toAmo).toMatch(/setInputFiles\('docs\/store\/amo\/01-picker\.png'\)/);
+  });
+
+  it('keeps the AMO set in a directory that holds nothing else', () => {
+    // The release uploader takes every numbered PNG in docs/store/amo/ and
+    // posts it to Mozilla, sight unseen. Both pictures are called 01-picker,
+    // both are 1280×800, and the only difference is the container list — so
+    // whichever one is in this directory is the one Firefox users see.
+    const amo = readdirSync(join(process.cwd(), 'docs/store/amo'));
+    expect(amo).toContain('01-picker.png');
+    expect(amo.filter((f) => f.includes('chrome'))).toEqual([]);
   });
 });

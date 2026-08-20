@@ -116,7 +116,9 @@ stop a request before it is sent.
   | `version.license` | This field, or custom_license, is required for listed versions. |
   | `categories`      | This field is required for add-ons with listed versions.        |
 
-- Everything else — description, icon, screenshot, links — is
+- The icon and the screenshots are **not** by hand: every release syncs them
+  through the API — see [The listing art](#the-listing-art) below.
+- The description and the links have no API at all, so those stay in
   `scripts/store/amo-listing.mjs`.
 
 ## Releasing
@@ -132,6 +134,94 @@ waits for the checks, squash-merges, and tags the commit that actually landed �
 a squash rewrites the commit, so a tag made before the merge would name a SHA
 that never reaches `main`.
 
+## The listing art
+
+`npm run amo:art`, run by the release workflow immediately after the AMO sign
+step. Firefox only: the Chrome Web Store has no API for a screenshot, so its
+listing stays a dashboard job.
+
+It uploads `dist-firefox/icons/icon-128.png` as the listing icon and every
+numbered PNG in [`docs/store/amo/`](store/amo/) — `01-*.png`, `02-*.png`, … — as
+the screenshots, in filename order. It is **declarative**: each run posts the
+whole set and then deletes the previews that were there before, so running it
+twice leaves the listing identical and accumulates nothing.
+
+It is also the recovery path, and it is safe to run by hand with the two
+secrets in the environment. A sync that stopped — because AMO was read-only,
+because the add-on did not exist yet, because a request timed out — is finished
+by running it again. There is nothing to undo first.
+
+### Why the AMO screenshots have a directory of their own
+
+`docs/store/` serves both stores, and the two pictures of the picker differ by
+the one thing that matters:
+
+| File                              | Store  | Shows                                      |
+| --------------------------------- | ------ | ------------------------------------------ |
+| `docs/store/amo/01-picker.png`    | AMO    | the container list — Work, Personal, Admin |
+| `docs/store/01-picker-chrome.png` | Chrome | no containers, because Chrome has none     |
+
+Both are 1280×800 and both match `01-*.png`. A single glob over `docs/store/`
+would have posted the Chrome picture to Mozilla — a picker with the containers
+missing, on the listing people install it for containers from — at position 0 or
+1 depending on nothing but a lexical sort. No pattern can be made to guess this
+right, so **where a file lives is what says which store it is for**, and
+`tests/amo-art.test.js` holds the uploader to it.
+
+### What that API costs to learn
+
+- **There is no image replace.** `PATCH .../previews/<id>/` accepts a new image,
+  answers `200` — and keeps the old one. Only the caption and the position are
+  writable after creation, so replacing a screenshot is POST then DELETE.
+  **In that order**: deleting first opens a window in which the live listing has
+  no screenshots at all, and every way a run can stop inside that window leaves
+  the store page bare. Posting first fails into duplicates, which are visible
+  and are repaired by running it again.
+- **Reading the current set** is a third quirk: `GET` on the previews collection
+  is a `405`, so the existing previews come off `previews[]` on the add-on
+  detail.
+- **Captions do not come from here.** A preview is posted with an image and a
+  position and nothing else, so the caption that `amo-listing.mjs` typed into
+  the dev hub on the first fill goes with the preview it belonged to. The
+  picture carries its own headline, which is why this has not been worth two
+  more requests out of an hourly budget of ten — but it is the one thing a sync
+  takes away.
+- **The declared part type is what gets validated**, not the bytes. A bare
+  `Buffer` appended to a `FormData` goes out as `application/octet-stream`, and
+  a perfectly good PNG comes back as _"Images must be either PNG or JPG."_ Wrap
+  it: `new Blob([buf], { type: 'image/png' })`.
+- **Uploads are paced about 21 seconds apart.** Preview create and delete count
+  against the same add-on submission throttle as the version upload that
+  `web-ext sign` made minutes earlier — 3 a minute, 10 an hour — and a naive
+  loop `429`s on its fourth call. A sync that cannot fit in the hourly bucket
+  refuses to start rather than posting half a set.
+- **The Firefox build, not the Chrome one.** The guid and the icon both come
+  from `dist-firefox/`; `dist/` is a Chrome manifest with no
+  `browser_specific_settings`, so reading the add-on id there throws.
+
+Size: AMO stores a preview at up to 2400×1800, downscaling anything larger and
+never upscaling anything smaller. Its gallery card is 320×200, so 1.6:1 fills
+the card and 4:3 letterboxes it — the 1280×800 shipped here is exactly 1.6:1 and
+also the size the Chrome dashboard asks for, which is why one staged HTML file
+per store is enough. There is no minimum and no ratio rule on the API path; the
+1000×750 check belongs to the devhub form, which this never touches.
+
+### One screenshot
+
+The listing shows one, and it is the picker: the whole product is that one
+dialog, and the picture already carries the pitch beside it. A second would have
+to be the settings page — the list of hosts you have stopped being asked about,
+which answers "will this nag me forever?" — and that is a real question, but it
+is answered in the store description too, and a screenshot of a form full of
+example.com is thinner than the one good picture next to it.
+
+There is no renderer to make one with, either: `docs/store/screenshot.html` and
+`screenshot-chrome.html` are staged pictures of the picker, opened and captured
+by hand, and staging a settings page by hand means drawing a screen rather than
+photographing one. If a second slot is ever worth filling, the honest way is to
+capture the real options page out of a profile with a few rules in it. Until
+then, one good screenshot beats two.
+
 ## When a release does not publish
 
 | Message                         | Meaning                                                                                                                                                                                                                                                                                                                |
@@ -141,3 +231,18 @@ that never reaches `main`.
 
 Both open a tracking issue so a green run that shipped nothing cannot go
 unnoticed. It closes itself when a later run publishes.
+
+### …and when the listing art does not go up
+
+The art step is the last one in the job, and the version has already published
+by the time it runs — so it warns and stays green wherever it stopped without
+touching anything, and reds wherever a run could not finish or did not.
+
+| Message                                | Meaning                                                                                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AMO secrets incomplete`               | The two secrets are not both set. Nothing was uploaded; nothing is broken.                                                                                                |
+| `No add-on on AMO under this id`       | The art step ran before a listing existed. The next release uploads it.                                                                                                   |
+| `AMO is read-only right now`           | Mozilla is mid-deploy or mid-incident. The version published; the art follows next release.                                                                               |
+| `AMO uploads are switched off`         | The same, as a `503` from the icon upload rather than up front. Nothing had been touched yet.                                                                             |
+| `the listing has already been changed` | Red: part of the set is up and the sync stopped there. `npm run amo:art` with the secrets set finishes it, and nothing needs undoing first.                               |
+| `this sync needs N throttled requests` | Red before anything was sent: the set plus the previews already on the listing is past AMO's ten-an-hour bucket. Ship fewer screenshots, or run it by hand an hour later. |
