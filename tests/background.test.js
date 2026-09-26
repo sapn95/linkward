@@ -60,6 +60,12 @@ function makeChrome({
       onInstalled: makeEvent(),
       onStartup: makeEvent(),
       onMessage: makeEvent(),
+      // Present on both browsers whatever is granted, and the only way another
+      // add-on can ask linkward whether it is also routing.
+      onMessageExternal: makeEvent(),
+      // Nothing is installed alongside by default: absence is the normal case,
+      // and every test that wants a peer says so.
+      sendMessage: vi.fn(async () => undefined),
     },
     action: { onClicked: makeEvent() },
     // storage.session is where the focus state outlives an event page that the
@@ -1041,6 +1047,199 @@ describe('the toolbar button', () => {
     const c = await boot();
     await c.action.onClicked.emit({ id: 1 });
     expect(c.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+});
+
+describe('when something else is also deciding where links open', () => {
+  // Two add-ons that both hold a blocking listener both get the same request, and
+  // when both take it the browser carries out both: one click, two tabs. Neither
+  // can see the other, so it has to be asked — see src/lib/census.js.
+  const COMMANDER = 'container-commander@sapn95.github.io';
+  const WORK_RULE = { container: 'Work', cookieStoreId: 'firefox-container-2' };
+
+  /** Make one peer answer a ping, and every other id answer nothing. */
+  function peerRoutes(c, routes, over = {}) {
+    c.runtime.sendMessage = vi.fn(async (id, msg) => {
+      if (id !== COMMANDER || msg?.type !== 'cc:ping') return undefined;
+      return {
+        id: COMMANDER,
+        name: 'container commander',
+        version: '0.5.2',
+        routing: true,
+        routes,
+        ...over,
+      };
+    });
+  }
+
+  /** What the settings page gets back when it asks. */
+  async function census(c) {
+    let answer;
+    c.runtime.onMessage.emitSync({ type: 'linkward:peers' }, {}, (r) => {
+      answer = r;
+    });
+    await settle(30);
+    return answer;
+  }
+
+  /** What a peer gets back when it pings linkward. */
+  async function pinged(c, sender = { id: COMMANDER }) {
+    let answer;
+    c.runtime.onMessageExternal.emitSync({ type: 'cc:ping' }, sender, (r) => {
+      answer = r;
+    });
+    await settle(30);
+    return answer;
+  }
+
+  it('answers a peer with what it is really doing', async () => {
+    const c = await boot();
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    expect(await pinged(c)).toMatchObject({
+      name: 'linkward',
+      routing: true,
+      routes: ['docs.example.com'],
+    });
+  });
+
+  it('answers "not routing" while it is switched off', async () => {
+    // A peer must not warn about linkward for a listener that is holding nothing.
+    const c = await boot({ settings: { enabled: false } });
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    expect(await pinged(c)).toMatchObject({ routing: false, routes: [] });
+  });
+
+  it('answers "not routing" when the access was handed back behind our back', async () => {
+    // The switch says on, `<all_urls>` is gone, and nothing is registered. That
+    // state already fooled this extension's own settings page once.
+    const c = await boot();
+    c.permissions.contains = vi.fn(async () => false);
+    expect(await pinged(c)).toMatchObject({ routing: false });
+  });
+
+  it('ignores a ping from an add-on that is not on the list', async () => {
+    // `sender.id` is assigned by the browser, so it can be trusted. Anything else
+    // is ignored in silence: other extensions are allowed to exist.
+    const c = await boot();
+    expect(await pinged(c, { id: 'something-else@example.com' })).toBeUndefined();
+  });
+
+  it('ignores a message it does not recognise from a peer that is on it', async () => {
+    const c = await boot();
+    let answer = 'untouched';
+    c.runtime.onMessageExternal.emitSync({ type: 'cc:claim' }, { id: COMMANDER }, (r) => {
+      answer = r;
+    });
+    await settle(30);
+    expect(answer).toBe('untouched');
+  });
+
+  it('names the other add-on and the hosts they both open', async () => {
+    const c = await boot();
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    // A wildcard and a bare host never compare equal, and that pair IS the bug.
+    peerRoutes(c, ['*.example.com']);
+    const answer = await census(c);
+    expect(answer.clash).toHaveLength(1);
+    expect(answer.clash[0].overlap).toEqual(['docs.example.com']);
+    expect(answer.line).toMatch(/container commander 0\.5\.2.*two tabs/s);
+  });
+
+  it('asks every peer, and only for a ping', async () => {
+    const c = await boot();
+    peerRoutes(c, []);
+    await census(c);
+    expect(c.runtime.sendMessage.mock.calls.map(([id]) => id)).toEqual([
+      'container-commander@sapn95.github.io',
+      'beeline@sapn95.github.io',
+    ]);
+    for (const [, msg] of c.runtime.sendMessage.mock.calls) {
+      expect(msg).toEqual({ type: 'cc:ping' });
+    }
+  });
+
+  it('says nothing when the peer is installed but not routing', async () => {
+    const c = await boot();
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    peerRoutes(c, ['*.example.com'], { routing: false });
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+  });
+
+  it('says nothing when linkward itself is switched off', async () => {
+    // Switching linkward off is one of the two correct answers to the problem, so
+    // the warning has to disappear the moment it is taken.
+    const c = await boot({ settings: { enabled: false } });
+    peerRoutes(c, ['*.example.com']);
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+  });
+
+  it('gives up on a peer that never answers rather than hanging the page', async () => {
+    // An add-on that is installed but asleep, with no listener for this. The
+    // settings page would otherwise wait for a reply that is not coming.
+    const c = await boot();
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    c.runtime.sendMessage = vi.fn(() => new Promise(() => {}));
+    let answer;
+    c.runtime.onMessage.emitSync({ type: 'linkward:peers' }, {}, (r) => {
+      answer = r;
+    });
+    await settle(30);
+    expect(answer).toBeUndefined();
+    vi.advanceTimersByTime(2000);
+    await settle(30);
+    expect(answer).toMatchObject({ clash: [], line: null });
+  });
+
+  it('treats a peer that is not installed as absent', async () => {
+    // The ordinary case, and the one Firefox produces: sendMessage rejects with
+    // "Could not establish connection. Receiving end does not exist." Absence is
+    // not an error — neither of these add-ons is required for the other to work.
+    const c = await boot();
+    c.runtime.sendMessage = vi.fn(async () => {
+      throw new Error('Could not establish connection. Receiving end does not exist.');
+    });
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+  });
+
+  it('treats a peer that throws on send as absent too', async () => {
+    // Synchronously, rather than by rejecting. Both have been seen.
+    const c = await boot();
+    c.runtime.sendMessage = vi.fn(() => {
+      throw new Error('Could not establish connection');
+    });
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+  });
+
+  it('says nothing at all when it cannot read its own settings', async () => {
+    // Answering "not routing" from a failed read would be worse than answering
+    // nothing: it is a peer's cue to stop warning about a clash that may well be
+    // live. A reply with no `routing` in it is read as "no answer" on both sides.
+    const c = await boot();
+    c.storage.sync.get = vi.fn(async () => {
+      throw new Error('Storage is unavailable');
+    });
+    expect(await pinged(c)).toEqual({ id: undefined, name: 'linkward' });
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+  });
+
+  it('does not ping anybody on Chrome', async () => {
+    // This failure needs a request that can be cancelled before it is sent, which
+    // is the ability Chrome MV3 removed. There, a second add-on is a fight over
+    // one tab rather than a second tab — and the peers are Firefox add-ons.
+    const c = await boot({ firefox: false });
+    peerRoutes(c, ['*.example.com']);
+    expect(await census(c)).toMatchObject({ clash: [], line: null });
+    expect(c.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('leaves a message meant for somebody else alone', async () => {
+    const c = await boot();
+    let answer = 'untouched';
+    c.runtime.onMessage.emitSync({ type: 'linkward:opened', tabId: 3 }, {}, (r) => {
+      answer = r;
+    });
+    await settle();
+    expect(answer).toBe('untouched');
   });
 });
 

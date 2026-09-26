@@ -62,6 +62,71 @@ async function init() {
       'profile — that isolation is enforced by Chrome itself.';
 }
 
+// --- Who else is deciding where links open ---------------------------------
+
+/**
+ * Ask the background whether another add-on is routing the same links.
+ *
+ * The background does the pinging, not this page: the reply has to survive the
+ * page being closed halfway through, the answer is the same for every page that
+ * asks, and a settings page holding message channels open to two other
+ * extensions is a lot of machinery for one line of text.
+ *
+ * Never awaited by its callers. A peer that is installed but asleep costs the
+ * two-second timeout, which is nothing on its own and is two seconds of a blank
+ * settings page if anything waits for it.
+ */
+function checkPeers() {
+  chrome.runtime
+    .sendMessage({ type: 'linkward:peers' })
+    // Silent on failure, and not shown as an error. Nothing here is a feature
+    // somebody switched on; a census that could not run is indistinguishable
+    // from a census that found nothing, and neither is worth a line on screen.
+    .then(showClash, () => {});
+}
+
+function showClash(peers) {
+  const box = $('clash');
+  const list = $('clash-list');
+  list.replaceChildren();
+  // Cleared as well as hidden. This runs again after the switch is toggled, and
+  // a stale warning left in a hidden box is one `hidden = false` away from
+  // naming an add-on that stopped clashing ten seconds ago.
+  if (!peers?.line) {
+    $('clash-line').textContent = '';
+    box.hidden = true;
+    return;
+  }
+  $('clash-line').textContent = peers.line;
+  for (const other of peers.clash ?? []) list.append(clashRow(other));
+  box.hidden = false;
+}
+
+function clashRow(other) {
+  const li = document.createElement('li');
+
+  const who = document.createElement('span');
+  who.className = 'who';
+  // textContent, never innerHTML: every field here came from another extension.
+  who.textContent = [other.name, other.version].filter(Boolean).join(' ');
+
+  const shared = document.createElement('span');
+  shared.className = 'shared';
+  // Not "forget those below". Forgetting a host makes linkward ASK about it
+  // instead of pinning it, and the picker is a redirect — so the other add-on's
+  // new tab and linkward's question still add up to two tabs. "Never ask for" is
+  // the only setting that makes linkward release the request untouched, which is
+  // what has to happen for the pair to stop.
+  shared.textContent = other.overlap?.length
+    ? `Also opens ${other.overlap.join(', ')} — put those in "Never ask for" below to leave them ` +
+      'to it, or switch one of the two off.'
+    : 'No site in common with the list below, but it is holding the same requests, so a link ' +
+      'either of you acts on can still open twice.';
+
+  li.append(who, shared);
+  return li;
+}
+
 async function onToggle(e) {
   // The request must be the FIRST thing in the handler: a handler stops being
   // user-initiated the moment it awaits, and permissions.request then fails.
@@ -94,6 +159,11 @@ async function renderRules() {
   list.replaceChildren();
   $('rules-empty').hidden = hosts.length > 0;
   for (const host of hosts) list.append(ruleRow(host, rules[host]));
+  // Here rather than in init(), because these are the hosts the census compares:
+  // pinning or forgetting one changes what overlaps, and a warning naming a site
+  // that is no longer in this list is a warning nobody can act on. Every path
+  // that changes a rule already ends here.
+  checkPeers();
 }
 
 function ruleRow(host, rule) {
@@ -260,6 +330,10 @@ async function save() {
       .filter(Boolean),
   });
   say('Saved.');
+  // After the write, not before: the switch and "Never ask for" are both things
+  // that decide whether linkward is half of a pair, and the census has to read
+  // what was just stored rather than what was on screen a moment ago.
+  checkPeers();
 }
 
 function say(text) {

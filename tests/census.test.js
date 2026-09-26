@@ -1,0 +1,241 @@
+// Who else is deciding where links open.
+//
+// This module exists because of a failure that nothing in either add-on could
+// see: linkward pinning seven hosts to a container with interception on, while
+// container commander routed a wildcard over the same hosts from its managed
+// policy. Two blocking listeners, one request, both of them taking it — and the
+// browser carried out both. Every one of those links opened in a pair, for
+// weeks, with both add-ons reporting themselves healthy, because an extension
+// cannot enumerate another extension's listeners.
+//
+// So the cases below are not hypotheticals. The first one IS the failure.
+
+import { describe, it, expect } from 'vitest';
+import {
+  PEERS,
+  routingState,
+  routeHosts,
+  overlapping,
+  clashes,
+  clashLine,
+} from '../src/lib/census.js';
+
+const PINNED = { container: 'work', cookieStoreId: 'firefox-container-2' };
+
+const SELF = { routing: true, routes: ['docs.example.com', 'code.example.com'] };
+
+const COMMANDER = {
+  id: 'container-commander@sapn95.github.io',
+  name: 'container commander',
+  version: '0.5.2',
+  routing: true,
+  routes: ['*.example.com', 'portal.example-cloud.com'],
+};
+
+describe('the participants', () => {
+  it('is a fixed list that does not include linkward itself', () => {
+    // No discovery and no relay: an add-on that asks whoever answers is an
+    // add-on any other add-on can put a warning into.
+    expect(PEERS).toEqual(['container-commander@sapn95.github.io', 'beeline@sapn95.github.io']);
+    expect(PEERS).not.toContain('linkward@sapn95.github.io');
+  });
+});
+
+describe('what linkward reports about itself', () => {
+  it('is routing when it is switched on and the listener is really registered', () => {
+    const s = routingState({ enabled: true, armed: true, rules: { 'a.example': PINNED } });
+    expect(s.routing).toBe(true);
+    expect(s.routes).toEqual(['a.example']);
+  });
+
+  // Two states, and in neither of them is a request ever held. Claiming to route
+  // would put a warning in a peer's settings page about a pair that cannot happen.
+  it.each([
+    ['switched off', { enabled: false, armed: true }],
+    ['switched on with the access handed back', { enabled: true, armed: false }],
+  ])('is not routing when it is %s', (_label, state) => {
+    const s = routingState({ ...state, rules: { 'a.example': PINNED } });
+    expect(s.routing).toBe(false);
+    // And publishes nothing, so a stale route list cannot outlive the routing.
+    expect(s.routes).toEqual([]);
+  });
+
+  it('is routing with no rules at all, which is the part that surprises people', () => {
+    // With nothing remembered linkward still redirects the request to its picker.
+    // A peer that reopens the same request in a container leaves you with the
+    // container tab AND a picker asking about a link that has already opened.
+    const s = routingState({ enabled: true, armed: true, rules: {} });
+    expect(s.routing).toBe(true);
+    expect(s.routes).toEqual([]);
+  });
+
+  it('answers without throwing on no state at all', () => {
+    expect(routingState()).toEqual({ routing: false, routes: [] });
+  });
+});
+
+describe('the hosts it publishes', () => {
+  it('names the hosts it would move to a container', () => {
+    expect(
+      routeHosts({
+        'docs.example.com': PINNED,
+        'code.example.com': { container: 'work' },
+      }),
+    ).toEqual(['docs.example.com', 'code.example.com']);
+  });
+
+  it('leaves out a host pinned to no container', () => {
+    // A plain rule releases the request untouched, so it cannot be half of a
+    // pair. Listing it would put a host in somebody's warning that is not part of
+    // the problem, and make the ones that are harder to see.
+    expect(
+      routeHosts({
+        'plain.example.com': { container: null, cookieStoreId: '', plain: true },
+        'empty.example.com': { container: null, cookieStoreId: '' },
+        'real.example.com': PINNED,
+      }),
+    ).toEqual(['real.example.com']);
+  });
+
+  it('lower-cases, because the other side compares strings', () => {
+    expect(routeHosts({ 'Docs.Example.COM': PINNED })).toEqual(['docs.example.com']);
+  });
+
+  it('skips a malformed entry rather than publishing a blank', () => {
+    // These rules come out of synced storage, which another machine wrote.
+    expect(routeHosts({ '': PINNED, 'a.example': null, 'b.example': 'yes' })).toEqual([]);
+    expect(routeHosts()).toEqual([]);
+  });
+});
+
+describe('the overlap between two host lists', () => {
+  it('sees a wildcard and a bare host as the same jurisdiction', () => {
+    // NOT set intersection. `*.example.com` and `docs.example.com` never compare
+    // equal, and that pair is the entire failure.
+    expect(overlapping(['docs.example.com'], ['*.example.com'])).toEqual(['docs.example.com']);
+  });
+
+  it('reads the pair the same way round', () => {
+    expect(overlapping(['*.example.com'], ['docs.example.com'])).toEqual(['docs.example.com']);
+  });
+
+  it('counts the apex as covered by its own wildcard', () => {
+    expect(overlapping(['example.com'], ['*.example.com'])).toEqual(['example.com']);
+  });
+
+  it('does not match a suffix that is not a label boundary', () => {
+    expect(overlapping(['notexample.com'], ['*.example.com'])).toEqual([]);
+  });
+
+  it('finds nothing between two unrelated lists', () => {
+    expect(overlapping(['a.example'], ['b.example'])).toEqual([]);
+  });
+});
+
+describe('finding the add-ons that are also routing', () => {
+  it('reports a peer whose wildcard covers the remembered hosts', () => {
+    const found = clashes(SELF, [COMMANDER]);
+    expect(found).toHaveLength(1);
+    expect(found[0].name).toBe('container commander');
+    expect(found[0].overlap).toEqual(['docs.example.com', 'code.example.com']);
+  });
+
+  it('says nothing about a peer that is installed but not routing', () => {
+    // One router is the working state, whichever one it is. A warning that fires
+    // on a peer merely being installed is the warning everybody clicks past — and
+    // then the one time it is real, it gets clicked past too.
+    expect(clashes(SELF, [{ ...COMMANDER, routing: false }])).toEqual([]);
+  });
+
+  it('says nothing when linkward is the one not routing', () => {
+    expect(clashes({ routing: false, routes: [] }, [COMMANDER])).toEqual([]);
+    expect(clashes(undefined, [COMMANDER])).toEqual([]);
+  });
+
+  it('still reports a routing peer with nothing in common', () => {
+    // Overlap is what makes it visible, not what makes it true: linkward asks
+    // about every external link, not only the remembered ones, so two add-ons can
+    // collide on a host neither of them published.
+    const found = clashes(SELF, [{ ...COMMANDER, routes: ['nowhere.example'] }]);
+    expect(found).toHaveLength(1);
+    expect(found[0].overlap).toEqual([]);
+  });
+
+  it('puts the worst overlap first', () => {
+    const small = { ...COMMANDER, name: 'small', routes: ['code.example.com'] };
+    expect(clashes(SELF, [small, COMMANDER]).map((f) => f.name)).toEqual([
+      'container commander',
+      'small',
+    ]);
+  });
+
+  // Every one of these arrives from another extension's message handler, across a
+  // boundary linkward does not control. None of it is trusted.
+  it.each([
+    ['a peer that did not answer', null],
+    ['a timeout', undefined],
+    ['a string', 'yes'],
+    ['a reply with no routing field', { name: 'x' }],
+  ])('ignores %s', (_label, answer) => {
+    expect(clashes(SELF, [answer])).toEqual([]);
+  });
+
+  it('falls back to the id, then to a generic name, when a peer names itself badly', () => {
+    // A peer answering without a name still has to be reportable: the whole point
+    // is telling somebody WHICH add-on to go and switch off.
+    const [byId] = clashes(SELF, [{ id: 'beeline@sapn95.github.io', routing: true }]);
+    expect(byId.name).toBe('beeline@sapn95.github.io');
+    expect(byId.version).toBe('');
+
+    const [anon] = clashes(SELF, [{ routing: true }]);
+    expect(anon.name).toBe('another extension');
+    expect(anon.id).toBe('');
+  });
+
+  it('compares against an empty route list of its own without throwing', () => {
+    // routingState() reports routing with no rules at all, on purpose.
+    const [found] = clashes({ routing: true }, [COMMANDER]);
+    expect(found.overlap).toEqual([]);
+  });
+
+  it('survives a reply whose routes are not a list of strings', () => {
+    const found = clashes(SELF, [{ ...COMMANDER, routes: [1, null, 'docs.example.com'] }]);
+    expect(found[0].routes).toEqual(['docs.example.com']);
+  });
+});
+
+describe('the sentence it puts on screen', () => {
+  it('names the add-on, the shared hosts and what to do', () => {
+    const line = clashLine(clashes(SELF, [COMMANDER]));
+    expect(line).toContain('container commander 0.5.2');
+    expect(line).toContain('docs.example.com');
+    expect(line).toContain('two tabs');
+    expect(line).toContain('Switch it off in one of them.');
+  });
+
+  it('truncates a long shared list rather than filling the box with it', () => {
+    const self = {
+      routing: true,
+      routes: ['a.example.com', 'b.example.com', 'c.example.com', 'd.example.com'],
+    };
+    const line = clashLine(clashes(self, [COMMANDER]));
+    expect(line).toContain('a.example.com, b.example.com, c.example.com, …');
+    expect(line).not.toContain('d.example.com');
+  });
+
+  it('drops the version when the peer did not send one', () => {
+    expect(clashLine(clashes(SELF, [{ name: 'beeline', routing: true }]))).toMatch(
+      /^beeline is also deciding/,
+    );
+  });
+
+  it('counts the others when more than one is routing', () => {
+    const other = { id: 'b@x', name: 'beeline', routing: true, routes: ['code.example.com'] };
+    expect(clashLine(clashes(SELF, [COMMANDER, other]))).toContain('(and 1 more)');
+  });
+
+  it('is null when nothing clashes, so a page can test it directly', () => {
+    expect(clashLine([])).toBeNull();
+    expect(clashLine()).toBeNull();
+  });
+});

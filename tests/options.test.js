@@ -32,6 +32,10 @@ async function mount({
   settings = {},
   rules = {},
   containers = [],
+  // What the background answers when the page asks who else is routing.
+  // Undefined by default, which is what an event page that is not another add-on's
+  // problem answers: nothing found.
+  peers = undefined,
 } = {}) {
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   requested = [];
@@ -41,8 +45,10 @@ async function mount({
     runtime: {
       getURL: () => `${firefox ? 'moz' : 'chrome'}-extension://linkward/`,
       getManifest: () => ({ version: '9.9.9' }),
-      // The pages ask the background to write; this is the background.
-      sendMessage: (msg) => rulesBackend()(msg),
+      // The pages ask the background to write, and to take the peer census;
+      // this is the background.
+      sendMessage: (msg) =>
+        msg?.type === 'linkward:peers' ? Promise.resolve(peers) : rulesBackend()(msg),
     },
     storage: { sync: makeArea({ settings, rules }), local: makeArea() },
   };
@@ -82,6 +88,89 @@ afterEach(() => {
   delete globalThis.chrome;
   delete globalThis.browser;
   vi.restoreAllMocks();
+});
+
+describe('the notice that another add-on is also routing', () => {
+  // The mirror image of the first-run notice. That one says nothing is happening;
+  // this one says it is happening twice, and it is the only warning on the page
+  // that fires while every setting below it is exactly as intended.
+  const CLASH = {
+    line: 'container commander 0.5.2 is also deciding where links open. Both open docs.example.com.',
+    clash: [
+      {
+        id: 'container-commander@sapn95.github.io',
+        name: 'container commander',
+        version: '0.5.2',
+        routes: ['*.example.com'],
+        overlap: ['docs.example.com', 'code.example.com'],
+      },
+    ],
+  };
+
+  it('stays hidden when nobody else is routing', async () => {
+    await mount({ granted: true, settings: { enabled: true } });
+    expect($('clash').hidden).toBe(true);
+  });
+
+  it('stays hidden when the background could not answer at all', async () => {
+    // A census that could not run is indistinguishable from one that found
+    // nothing, and neither is worth a line on screen.
+    await mount({ peers: null });
+    expect($('clash').hidden).toBe(true);
+  });
+
+  it('names the add-on and the sites they both open', async () => {
+    await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
+    expect($('clash').hidden).toBe(false);
+    expect($('clash-line').textContent).toContain('container commander 0.5.2');
+    const row = $('clash-list').querySelector('li');
+    expect(row.querySelector('.who').textContent).toBe('container commander 0.5.2');
+    expect(row.querySelector('.shared').textContent).toContain(
+      'docs.example.com, code.example.com',
+    );
+  });
+
+  it('points at "Never ask for" rather than at forgetting the site', async () => {
+    // Forgetting a host makes linkward ASK about it instead of pinning it, and the
+    // picker is a redirect — so the other add-on's new tab and linkward's question
+    // still add up to two tabs. "Never ask for" is the only setting that makes
+    // linkward release the request untouched.
+    await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
+    expect($('clash-list').textContent).toMatch(/never ask for/i);
+    expect($('clash-list').textContent).not.toMatch(/forget/i);
+  });
+
+  it('says so even when nothing is in common, because both still hold the request', async () => {
+    // linkward asks about every external link, not only the remembered ones, so
+    // two add-ons can collide on a host neither of them published.
+    await mount({
+      granted: true,
+      settings: { enabled: true },
+      peers: { line: 'beeline is also deciding where links open.', clash: [{ name: 'beeline' }] },
+    });
+    expect($('clash').hidden).toBe(false);
+    expect($('clash-list').textContent).toMatch(/no site in common/i);
+  });
+
+  it('goes away when the switch is turned off, without a reload', async () => {
+    // Switching linkward off is one of the two correct answers, so the warning has
+    // to disappear the moment it is taken — otherwise the page contradicts itself.
+    await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
+    expect($('clash').hidden).toBe(false);
+    // The background answers on what is stored, so the second census finds nothing.
+    globalThis.chrome.runtime.sendMessage = (msg) =>
+      msg?.type === 'linkward:peers'
+        ? Promise.resolve({ clash: [], line: null })
+        : rulesBackend()(msg);
+    $('enabled').checked = false;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('clash').hidden).toBe(true);
+    // Cleared, not merely hidden: a stale warning in a hidden box is one
+    // `hidden = false` away from naming an add-on that stopped clashing.
+    expect($('clash-line').textContent).toBe('');
+    expect($('clash-list').children).toHaveLength(0);
+  });
 });
 
 describe('the first-run notice', () => {
@@ -605,8 +694,11 @@ describe('changing where one host opens', () => {
     select.dispatchEvent(new Event('change'));
     await settle(30);
 
-    expect(sent.map((m) => m.type)).toEqual(['linkward:rules:set']);
-    expect(sent[0]).toMatchObject({ host: 'example.com', rule: { container: 'Home' } });
+    // Only the writes. Re-rendering the list also takes the peer census, which is
+    // a read and goes nowhere near the queue this test is about.
+    const writes = sent.filter((m) => m.type.startsWith('linkward:rules:'));
+    expect(writes.map((m) => m.type)).toEqual(['linkward:rules:set']);
+    expect(writes[0]).toMatchObject({ host: 'example.com', rule: { container: 'Home' } });
   });
 
   it('still keeps the whole-map write for an import, where replacing is the point', async () => {
