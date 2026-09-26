@@ -4,3 +4,4 @@ dist-firefox/
 coverage/
 *.zip
 .DS_Store
+.vitest/
