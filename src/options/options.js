@@ -93,7 +93,15 @@ function checkPeers() {
       (peers) => {
         if (ask === peerAsk) showClash(peers);
       },
-      () => {},
+      () => {
+        // Cleared, not left standing. This runs again after the master switch is
+        // toggled, and the warning already on screen was measured against the
+        // old setting — so keeping it means asserting a pair nothing has
+        // confirmed since. A failed census says nothing, and nothing is what an
+        // empty box says. Guarded like the success path: an older ask that
+        // failed must not wipe a newer one's answer.
+        if (ask === peerAsk) showClash(null);
+      },
     );
 }
 
