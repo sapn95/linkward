@@ -114,7 +114,12 @@ export function clashes(self, answers = []) {
     );
     found.push({
       id: typeof a.id === 'string' ? a.id : '',
-      name: typeof a.name === 'string' ? a.name : (a.id ?? 'another extension'),
+      // Both halves of the fallback are filtered, not only the first. A peer that
+      // answers `name: ''` would otherwise be reported as nothing at all, and one
+      // whose id is not a string would be reported as whatever String() makes of
+      // it. The sentence this ends up in has to name something a person can go
+      // and find.
+      name: displayable(a.name) || displayable(a.id) || 'another extension',
       version: typeof a.version === 'string' ? a.version : '',
       routes,
       overlap: overlapping(self.routes ?? [], routes),
@@ -123,6 +128,11 @@ export function clashes(self, answers = []) {
   // The one sharing the most hosts is doing the most damage, and it is the one
   // whose name belongs in a one-line warning.
   return found.sort((a, b) => b.overlap.length - a.overlap.length);
+}
+
+/** A field from a peer, if it is a string with something in it. Otherwise ''. */
+function displayable(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 /**
