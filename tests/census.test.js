@@ -234,6 +234,20 @@ describe('finding the add-ons that are also routing', () => {
     expect(anon.id).toBe('');
   });
 
+  it('does not report a blank or a non-string as the add-on to go and switch off', () => {
+    // An empty name passed the old string check and came out as nothing at all,
+    // and an id that is not a string came out as whatever String() makes of it.
+    // The sentence has to name something somebody can find in their add-ons list.
+    const [blank] = clashes(SELF, [{ name: '   ', id: 'beeline@sapn95.github.io', routing: true }]);
+    expect(blank.name).toBe('beeline@sapn95.github.io');
+
+    for (const bad of [{ id: 42 }, { id: {} }, { id: '' }, { name: '', id: null }]) {
+      const [found] = clashes(SELF, [{ ...bad, routing: true }]);
+      expect(found.name).toBe('another extension');
+      expect(found.id).toBe('');
+    }
+  });
+
   it('compares against an empty route list of its own without throwing', () => {
     // routingState() reports routing with no rules at all, on purpose.
     const [found] = clashes({ routing: true }, [COMMANDER]);
