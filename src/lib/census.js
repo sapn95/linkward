@@ -73,6 +73,16 @@ export function routingState({ enabled, armed, rules, neverAsk } = {}) {
  * have done exactly what it asked. `matchesAny` is imported rather than reworded
  * here: a second copy of the suffix rule is a census that disagrees with the
  * decision it is describing.
+ *
+ * The mirror of this does NOT hold, and it has been proposed twice: dropping a
+ * peer from the warning because the never-ask list covers every host it
+ * published. It reads like the same rule applied the other way round, and it is
+ * not. What a peer publishes is its RULES; what it acts on is wider. Container
+ * commander reopens a tab from a bookmark-folder hint with no rule matched at
+ * all (`ruleId: bookmark:…` in its engine), on a host that therefore appears in
+ * no route list. Release those requests and linkward is still asking about that
+ * host, so the pair survives a suppression built on the published list. Over-
+ * warning is the safe direction here too.
  */
 export function routeHosts(rules, neverAsk) {
   const out = [];

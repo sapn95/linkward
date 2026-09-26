@@ -205,6 +205,57 @@ describe('the notice that another add-on is also routing', () => {
     expect($('clash').hidden).toBe(true);
     expect($('clash-line').textContent).toBe('');
   });
+
+  it('takes the warning down when the census cannot be run at all', async () => {
+    // The box on screen was measured against the settings as they were. If the
+    // background cannot be reached after a change, keeping it means asserting a
+    // pair that nothing has confirmed since — and the change that just failed to
+    // be measured may well have been switching linkward off.
+    await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
+    expect($('clash').hidden).toBe(false);
+
+    globalThis.chrome.runtime.sendMessage = (msg) =>
+      msg?.type === 'linkward:peers'
+        ? Promise.reject(new Error('Could not establish connection'))
+        : rulesBackend()(msg);
+    $('enabled').checked = false;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('clash').hidden).toBe(true);
+    expect($('clash-line').textContent).toBe('');
+    expect($('clash-list').children).toHaveLength(0);
+  });
+
+  it('does not let an older failed census wipe a newer answer', async () => {
+    // The guard belongs on both halves of the .then. Without it on the failure
+    // half, one unreachable background clears a warning a later census had just
+    // confirmed, and nothing puts it back until the page is opened again.
+    await mount({ granted: true, settings: { enabled: true } });
+    const pending = [];
+    globalThis.chrome.runtime.sendMessage = (msg) =>
+      msg?.type === 'linkward:peers'
+        ? new Promise((resolve, reject) => pending.push({ resolve, reject }))
+        : rulesBackend()(msg);
+
+    $('never').value = 'intranet.example';
+    $('never').dispatchEvent(new Event('change'));
+    await settle();
+    $('never').value = 'intranet.example, other.example';
+    $('never').dispatchEvent(new Event('change'));
+    await settle();
+    expect(pending).toHaveLength(2);
+
+    // Newest answers first, and it found a clash.
+    pending.at(-1).resolve(CLASH);
+    await settle();
+    expect($('clash').hidden).toBe(false);
+
+    // The older one then fails. It is stale, so it changes nothing.
+    pending[0].reject(new Error('Could not establish connection'));
+    await settle();
+    expect($('clash').hidden).toBe(false);
+    expect($('clash-line').textContent).toBe(CLASH.line);
+  });
 });
 
 describe('the first-run notice', () => {
