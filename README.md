@@ -182,6 +182,46 @@ linkward did before any of this: it asks.
 **Settings → Ask about bookmarks and addresses I type myself** turns the whole
 rule off, for people who would rather be interrupted than miss one. It is off.
 
+## When every link opens twice
+
+If one click gives you **two tabs** — same address, often the same container —
+another add-on is also deciding where links open, and linkward is not
+malfunctioning. Neither is it.
+
+Firefox hands a request to **every** add-on that asked to hold one. If two of
+them both take it, Firefox carries out both: one cancels the navigation and opens
+a replacement in a container, the other redirects it to a picker or to a
+container of its own, and you get both results. Anything that reopens a tab
+somewhere else qualifies — Multi-Account Containers with a site assigned,
+container commander with a rule on the same host, or a second copy of linkward
+itself in a temporary install.
+
+No add-on can detect this on its own. There is no API that lists another
+extension's `webRequest` listeners, and `management` would want a permission
+whose warning is worse than the problem. So linkward **asks**: it pings the
+add-ons it knows speak
+[container commander's protocol](https://github.com/sapn95/container-commander/blob/main/docs/protocol.md),
+compares their answer with its own, and names the other add-on at the top of its
+settings page along with the sites you both open.
+
+Anything that does not answer that ping is invisible to it, which is most things.
+The symptom is the reliable part: **exactly two tabs, every time, for the same
+sites.** One tab in the wrong container is a rule; two tabs is two routers.
+
+There are two fixes and they are both one setting:
+
+- **Leave those sites to the other add-on** — put them in
+  **Settings → Never ask for**. That is the only setting that makes linkward
+  release the request untouched. Forgetting a remembered site does _not_ do it:
+  linkward then asks about the site instead, and its picker is a redirect, so the
+  pair remains.
+- **Leave every link to linkward** — switch interception off in the other add-on.
+
+Being right about where a site belongs does not help either way. Agreeing is what
+produces the pair. The comparison lives in
+[`src/lib/census.js`](src/lib/census.js), which is shared with container
+commander so the two cannot disagree about what overlaps.
+
 ## Chrome
 
 ```mermaid

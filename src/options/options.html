@@ -22,6 +22,31 @@
         access Firefox asks for. Until then every link opens as it always did.
       </p>
 
+      <!-- Directly under that notice, and for the mirror-image reason. That one
+           says nothing is happening; this one says it is happening twice. Both
+           are states in which every setting below is exactly as intended and the
+           browser does not behave the way the page describes, which is the only
+           kind of problem worth putting above the master switch. -->
+      <section id="clash" class="setup" hidden>
+        <p>
+          <strong>Another add-on is also deciding where links open.</strong>
+          <span id="clash-line"></span>
+        </p>
+        <ul class="clash-list" id="clash-list"></ul>
+        <p class="note">
+          Firefox hands the same request to every add-on that asked to hold one, and none of them
+          can see the others — there is no way to list another add-on's listeners. So when two of
+          them both take a link and reopen it, Firefox does both: one click becomes two tabs, same
+          address, same container. Neither add-on is broken, which is why this is easy to live with
+          for weeks without working out what it is.
+        </p>
+        <p class="note">
+          Pick one of them to do it and switch the other one off — the switch above, if that is
+          linkward. Both being right about where a site belongs does not help; agreeing is what
+          produces the pair.
+        </p>
+      </section>
+
       <!-- The master switch stays above every heading and outside every group:
            until it is on, nothing below it does anything, and burying it under
            a heading of its own would make it one setting among several. -->

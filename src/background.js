@@ -19,11 +19,17 @@ import {
   transitionIsInternal,
 } from './lib/candidates.js';
 import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js';
-import { isFirefox, listContainers, resolveRule } from './lib/containers.js';
+import { isFirefox, listContainers, resolveRule, hasWatchPermissions } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
+import { PEERS, routingState, clashes, clashLine } from './lib/census.js';
 
 const PICK_PAGE = 'pick/pick.html';
+// How long to wait for a peer to answer a ping. Generous next to anything in a
+// blocking listener, because nothing is being held up: this runs when a settings
+// page opens, and the alternative to waiting is reporting "nobody else is
+// routing" because an event page was asleep.
+const PING_TIMEOUT_MS = 2000;
 // How long after a tab appears its first navigation still counts as the one the
 // tab was created for. Long enough for a slow hand-off from another app, short
 // enough that ordinary browsing in that tab is never touched.
@@ -208,6 +214,12 @@ async function openThere(tabId, url, cookieStoreId) {
 
 // --- Firefox: stop it before the request is sent ---------------------------
 
+// Did the blocking listener actually get registered? Not the same question as
+// whether the user switched linkward on: the permission it needs can be handed
+// back in the browser's own add-on settings, in which case the switch still says
+// on and no request is ever held. Only the census reads this.
+let listening = false;
+
 /**
  * Registered SYNCHRONOUSLY, at the top of this file, and that is the whole
  * point.
@@ -230,14 +242,20 @@ async function openThere(tabId, url, cookieStoreId) {
 function armFirefox() {
   if (!isFirefox()) return;
   try {
-    if (chrome.webRequest.onBeforeRequest.hasListener(onBeforeRequest)) return;
-    chrome.webRequest.onBeforeRequest.addListener(
-      onBeforeRequest,
-      { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] },
-      ['blocking'],
-    );
+    if (!chrome.webRequest.onBeforeRequest.hasListener(onBeforeRequest)) {
+      chrome.webRequest.onBeforeRequest.addListener(
+        onBeforeRequest,
+        { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] },
+        ['blocking'],
+      );
+    }
+    // Recorded because a peer asks. Whether this line was reached is the only
+    // thing in the extension that knows the difference between "switched on" and
+    // "switched on and actually holding requests" — see the census.
+    listening = true;
   } catch {
     // No permission yet. permissions.onAdded will bring us back here.
+    listening = false;
   }
 }
 
@@ -378,6 +396,111 @@ chrome.action?.onClicked?.addListener(() => {
 // The only one that really matters after the first run: this is the moment the
 // permission arrives and `chrome.webRequest` becomes something we can add to.
 chrome.permissions.onAdded.addListener(arm);
+
+// --- Who else is deciding where links open ---------------------------------
+//
+// linkward is not the only add-on that can take a request away from the tab it
+// was heading for, and when two of them do it to the same request the browser
+// carries out both: one click, two tabs. Neither add-on malfunctions and neither
+// can see the other — the platform has no way to list another extension's
+// webRequest listeners. So it is asked. See lib/census.js for what that cost.
+//
+// Firefox only, and not for tidiness: this failure needs a request that can be
+// cancelled before it is sent, which is the ability Chrome MV3 removed. On
+// Chrome linkward turns a tab around after the navigation has committed, and a
+// second add-on doing the same is a fight over one tab rather than a second tab.
+
+/**
+ * What linkward answers a peer with.
+ *
+ * `hasWatchPermissions` is asked rather than trusting the stored switch, because
+ * the tick on the options page can be on while the permission behind it has been
+ * handed back in the browser's own add-on settings. Claiming to route in that
+ * state would put a warning about linkward into somebody ELSE's settings page for
+ * a listener that is not registered.
+ *
+ * A failed read is NOT caught here: coming back as `enabled: false` inside an
+ * otherwise ordinary-looking answer is the one thing this must not do. Both
+ * callers already have a "says nothing" reply, and it is the right one for a
+ * storage error and for a census that could not run alike.
+ */
+async function myRoutingState() {
+  const [settings, rules, granted] = await Promise.all([
+    getSettings(),
+    getRules(),
+    hasWatchPermissions(),
+  ]);
+  return routingState({
+    enabled: settings?.enabled === true,
+    armed: listening && granted,
+    rules,
+  });
+}
+
+/**
+ * Answer container commander's `cc:ping`.
+ *
+ * `sender.id` is assigned by the browser, so it can be trusted, and anything not
+ * on the list is ignored in silence rather than refused: other extensions are
+ * allowed to exist and to talk to whoever they like.
+ *
+ * Registered synchronously, like every other listener here, or the event page
+ * cannot be started for it and a ping to a sleeping linkward goes unanswered —
+ * which reads as "linkward is not routing" and is the one wrong answer this
+ * whole mechanism exists to avoid.
+ */
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (!PEERS.includes(sender?.id)) return undefined;
+  if (msg?.type !== 'cc:ping') return undefined;
+  myRoutingState().then(
+    (state) => sendResponse({ id: chrome.runtime.id, name: 'linkward', ...state }),
+    // A reply that omits `routing` is read as "not routing" by the other side,
+    // which is the safe way to fail: it under-warns rather than inventing a clash.
+    () => sendResponse({ id: chrome.runtime.id, name: 'linkward' }),
+  );
+  return true;
+});
+
+/**
+ * Ask one peer, and give up rather than hang.
+ *
+ * A peer that is not installed rejects, a peer that is asleep and has no
+ * listener for this never answers at all, and neither is an error — absence is
+ * the normal case. Both become `null`, which the census ignores.
+ */
+function ping(id) {
+  let asked;
+  try {
+    asked = chrome.runtime.sendMessage(id, { type: 'cc:ping' });
+  } catch {
+    // Some browsers throw rather than reject for an id that is not installed.
+    return Promise.resolve(null);
+  }
+  return Promise.race([
+    Promise.resolve(asked).catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), PING_TIMEOUT_MS)),
+  ]);
+}
+
+async function takeCensus() {
+  const self = await myRoutingState();
+  if (!isFirefox()) return { self, clash: [], line: null };
+  const answers = await Promise.all(PEERS.map(ping));
+  const clash = clashes(self, answers);
+  return { self, clash, line: clashLine(clash) };
+}
+
+/** The options page asks; it does not ping the peers itself. */
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'linkward:peers') return undefined;
+  takeCensus().then(
+    (result) => sendResponse(result),
+    // Same posture as above: a census that failed says nothing, rather than
+    // putting a warning on the page that nobody can act on.
+    () => sendResponse({ clash: [], line: null }),
+  );
+  return true;
+});
 
 // --- The one writer of the remembered hosts -------------------------------
 //

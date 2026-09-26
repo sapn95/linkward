@@ -62,7 +62,7 @@ describe('the diagrams', () => {
 describe('what the README says about bookmarks and typed addresses', () => {
   const section = README.slice(
     README.indexOf('### Bookmarks and typed addresses'),
-    README.indexOf('## Chrome'),
+    README.indexOf('## When every link opens twice'),
   ).replace(/\s+/g, ' ');
 
   it('exists under the anchor the options page links to', () => {
@@ -156,6 +156,51 @@ describe('what the README says about bookmarks and typed addresses', () => {
   it('says the setting exists and that it is off', () => {
     expect(section).toMatch(/Ask about bookmarks and addresses I type myself/);
     expect(section).toMatch(/It is off\./);
+  });
+});
+
+describe('what the README says when every link opens twice', () => {
+  // The failure that took weeks to find, because nothing was broken: two add-ons
+  // both holding the same request, both right about where it belongs. Somebody
+  // hitting it will search for the symptom, so the symptom has to be in here in
+  // the words they will use.
+  const section = README.slice(
+    README.indexOf('## When every link opens twice'),
+    README.indexOf('## Chrome'),
+  ).replace(/\s+/g, ' ');
+
+  it('leads with the symptom rather than with the mechanism', () => {
+    expect(section).not.toBe('');
+    expect(section).toMatch(/two tabs/i);
+    expect(section).toMatch(/one tab in the wrong container is a rule/i);
+  });
+
+  it('says neither add-on is malfunctioning, which is the part nobody believes', () => {
+    expect(section).toMatch(/linkward is not malfunctioning/i);
+    expect(section).toMatch(/Agreeing is what\s*produces the pair/i);
+  });
+
+  it('says why no add-on can detect it, so the ping does not look like laziness', () => {
+    expect(section).toMatch(/no API that lists another\s*extension's `webRequest` listeners/i);
+    expect(section).toMatch(/management/);
+  });
+
+  it('admits it only sees the add-ons that answer', () => {
+    // The census covers three add-ons out of everything installable. Claiming a
+    // general warning would make its silence mean something it does not.
+    expect(section).toMatch(/invisible to it, which is most things/i);
+  });
+
+  it('points at "Never ask for" and says forgetting the site is not the fix', () => {
+    // Forgetting a host makes linkward ASK about it instead, and the picker is a
+    // redirect, so the pair survives. This is the one instruction here that is
+    // easy to get wrong and hard to notice getting wrong.
+    expect(section).toMatch(/Never ask for/);
+    expect(section).toMatch(/Forgetting a remembered site does _not_ do it/i);
+  });
+
+  it('links the shared comparison, because both add-ons must agree what overlaps', () => {
+    expect(section).toContain('src/lib/census.js');
   });
 });
 

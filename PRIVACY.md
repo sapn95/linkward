@@ -29,7 +29,18 @@ stores the **host**, not the address.
 
 ## What it sends
 
-Nothing. There is no network code in this extension.
+Nothing over the network. There is no network code in this extension.
+
+It does send one message **on your machine**, to two other add-ons by fixed id:
+`container-commander@sapn95.github.io` and `beeline@sapn95.github.io`. The message
+is the word `cc:ping` and nothing else. What comes back, and what linkward answers
+when one of them asks the same question, is whether it is currently set to reopen
+links and which hosts you have pinned to a container — so that either settings
+page can tell you when two add-ons are both moving your links and opening two tabs
+for every one. No address you visited and no choice you made is in it.
+
+If neither add-on is installed nothing is sent anywhere, and nothing else can ask:
+a message from any other id is ignored without a reply.
 
 ## Turning it off
 
