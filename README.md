@@ -214,8 +214,15 @@ There are two fixes and they are both one setting:
   **Settings → Never ask for**. That is the only setting that makes linkward
   release the request untouched. Forgetting a remembered site does _not_ do it:
   linkward then asks about the site instead, and its picker is a redirect, so the
-  pair remains.
+  pair remains. You can leave the rules where they are; an excluded host is
+  released before any rule is read, and linkward stops listing it to the other
+  add-on for the same reason.
 - **Leave every link to linkward** — switch interception off in the other add-on.
+
+The notice does not go away after the first of those, and that is deliberate: the
+sites you both opened are gone from it, but the other add-on is still holding
+every request, so a host it starts routing tomorrow is a pair again. Only the
+second fix ends it.
 
 Being right about where a site belongs does not help either way. Agreeing is what
 produces the pair. The comparison lives in

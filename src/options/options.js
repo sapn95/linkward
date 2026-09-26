@@ -76,13 +76,25 @@ async function init() {
  * two-second timeout, which is nothing on its own and is two seconds of a blank
  * settings page if anything waits for it.
  */
+// Saving and rendering both ask, so two questions can be outstanding at once,
+// and each waits on two other add-ons and can come back in either order. Without
+// this the slower answer paints last and a warning the newer one had cleared
+// comes back on screen.
+let peerAsk = 0;
+
 function checkPeers() {
+  const ask = ++peerAsk;
   chrome.runtime
     .sendMessage({ type: 'linkward:peers' })
     // Silent on failure, and not shown as an error. Nothing here is a feature
     // somebody switched on; a census that could not run is indistinguishable
     // from a census that found nothing, and neither is worth a line on screen.
-    .then(showClash, () => {});
+    .then(
+      (peers) => {
+        if (ask === peerAsk) showClash(peers);
+      },
+      () => {},
+    );
 }
 
 function showClash(peers) {
