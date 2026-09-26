@@ -434,6 +434,7 @@ async function myRoutingState() {
     enabled: settings?.enabled === true,
     armed: listening && granted,
     rules,
+    neverAsk: settings?.neverAsk,
   });
 }
 

@@ -202,6 +202,16 @@ describe('what the README says when every link opens twice', () => {
   it('links the shared comparison, because both add-ons must agree what overlaps', () => {
     expect(section).toContain('src/lib/census.js');
   });
+
+  it('says the notice survives the first fix, so its staying does not read as a bug', () => {
+    // Excluding the shared hosts takes them out of the notice but leaves the other
+    // add-on holding every request. Somebody who does what the page asked and
+    // still sees a warning will otherwise conclude the warning is broken.
+    expect(section).toMatch(/does not go away after the first of those/i);
+    expect(section).toMatch(/still holding\s*every request/i);
+    // And that the rules can stay, or they will delete work they do not need to.
+    expect(section).toMatch(/leave the rules where they are/i);
+  });
 });
 
 describe('what the README claims about Chromium profiles', () => {

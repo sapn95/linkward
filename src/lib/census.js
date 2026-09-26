@@ -19,10 +19,15 @@
 // commander's claim protocol, and answered honestly by each participant.
 //
 // Shared with container-commander, the way candidates.js and focus.js went the
-// other way. Keep the comparison functions identical in both: a census where the
-// two sides disagree about what overlaps is worse than no census.
+// other way. Keep the COMPARISON functions identical in both — clashes(),
+// overlapping(), covers() — because a census where the two sides disagree about
+// what overlaps is worse than no census. What each side publishes is its own
+// business and already differs: commander reduces a regex rule to its id, and the
+// import below is linkward's never-ask list, which commander has no equivalent of.
 //
 // Pure. No browser APIs — the caller collects the answers and hands them over.
+
+import { matchesAny } from './candidates.js';
 
 /** The add-ons that speak the protocol. A fixed list: no discovery, no relay. */
 export const PEERS = ['container-commander@sapn95.github.io', 'beeline@sapn95.github.io'];
@@ -44,11 +49,11 @@ export const PEERS = ['container-commander@sapn95.github.io', 'beeline@sapn95.gi
  * request in a container leaves you with the container tab AND a picker asking
  * about a link that has already opened. Two tabs, one of them a question.
  *
- * @param {{enabled?: boolean, armed?: boolean, rules?: object}} state
+ * @param {{enabled?: boolean, armed?: boolean, rules?: object, neverAsk?: string[]}} state
  */
-export function routingState({ enabled, armed, rules } = {}) {
+export function routingState({ enabled, armed, rules, neverAsk } = {}) {
   const routing = enabled === true && armed === true;
-  return { routing, routes: routing ? routeHosts(rules) : [] };
+  return { routing, routes: routing ? routeHosts(rules, neverAsk) : [] };
 }
 
 /**
@@ -59,13 +64,26 @@ export function routingState({ enabled, armed, rules } = {}) {
  * container, linkward releases the request untouched, so it cannot be half of a
  * pair. Listing it would put a host in somebody's warning that is not part of
  * the problem — and the hosts that ARE the problem would be harder to see for it.
+ *
+ * The never-ask list wins over a rule, because that is the order `shouldAsk`
+ * applies them in: an excluded host is released before the rules are consulted
+ * at all. This matters more than it looks. Putting the shared hosts on that list
+ * is the fix this whole warning points people at, and a rule they leave behind
+ * would otherwise keep the warning standing on both settings pages after they
+ * have done exactly what it asked. `matchesAny` is imported rather than reworded
+ * here: a second copy of the suffix rule is a census that disagrees with the
+ * decision it is describing.
  */
-export function routeHosts(rules) {
+export function routeHosts(rules, neverAsk) {
   const out = [];
   for (const [host, rule] of Object.entries(rules ?? {})) {
     if (!host || !rule || typeof rule !== 'object') continue;
     if (rule.plain === true) continue;
     if (!rule.container && !rule.cookieStoreId) continue;
+    // matchesAny reads a URL, and a bare host is not one. A rule key that cannot
+    // be made into a URL is kept rather than dropped: over-warning is the safe
+    // direction, and a host nobody can parse is not one the list can cover.
+    if (matchesAny(`https://${host}/`, neverAsk)) continue;
     out.push(host.toLowerCase());
   }
   return [...new Set(out)];

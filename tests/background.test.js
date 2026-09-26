@@ -1117,6 +1117,34 @@ describe('when something else is also deciding where links open', () => {
     expect(await pinged(c)).toMatchObject({ routing: false });
   });
 
+  it('leaves out a host the never-ask list already releases', async () => {
+    // The fix the warning points at, end to end: the hosts go on the never-ask
+    // list and the rules stay. shouldAsk releases an excluded host before it
+    // consults a rule, so linkward decides nothing about it and must not claim to
+    // — otherwise the warning outlives the fix it asked for, on both pages.
+    const c = await boot({ settings: { enabled: true, neverAsk: ['docs.example.com'] } });
+    c.storage.sync.store.rules = {
+      'docs.example.com': WORK_RULE,
+      'code.example.com': WORK_RULE,
+    };
+    expect(await pinged(c)).toMatchObject({ routing: true, routes: ['code.example.com'] });
+  });
+
+  it('stops naming the shared hosts once they are on the never-ask list', async () => {
+    const c = await boot({ settings: { enabled: true, neverAsk: ['example.com'] } });
+    c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
+    peerRoutes(c, ['*.example.com']);
+    const answer = await census(c);
+    // Still a routing peer, and still worth saying so: linkward is holding every
+    // request that is not excluded, so a host the peer adds tomorrow is a pair
+    // again. What goes is the claim that these two both open docs.example.com,
+    // because after this they do not.
+    expect(answer.self.routing).toBe(true);
+    expect(answer.clash).toHaveLength(1);
+    expect(answer.clash[0].overlap).toEqual([]);
+    expect(answer.line).not.toMatch(/docs\.example\.com/);
+  });
+
   it('ignores a ping from an add-on that is not on the list', async () => {
     // `sender.id` is assigned by the browser, so it can be trusted. Anything else
     // is ignored in silence: other extensions are allowed to exist.

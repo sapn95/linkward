@@ -171,6 +171,40 @@ describe('the notice that another add-on is also routing', () => {
     expect($('clash-line').textContent).toBe('');
     expect($('clash-list').children).toHaveLength(0);
   });
+
+  it('does not let a slow earlier answer paint over a newer one', async () => {
+    // Saving and re-rendering both ask, so two questions can be outstanding at
+    // once, and each waits on two other add-ons. The switch is turned off, the
+    // newer census comes back empty and clears the box, and then the answer from
+    // before the switch arrives with the clash still in it.
+    await mount({ granted: true, settings: { enabled: true } });
+    const held = [];
+    globalThis.chrome.runtime.sendMessage = (msg) =>
+      msg?.type === 'linkward:peers'
+        ? new Promise((resolve) => held.push(resolve))
+        : rulesBackend()(msg);
+
+    // Two in flight: the never-ask list is edited, and then the switch goes off
+    // before the first answer is back.
+    $('never').value = 'intranet.example';
+    $('never').dispatchEvent(new Event('change'));
+    await settle();
+    $('enabled').checked = false;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect(held).toHaveLength(2);
+
+    // Newest first: nothing found.
+    held.at(-1)({ clash: [], line: null });
+    await settle();
+    expect($('clash').hidden).toBe(true);
+
+    // Then everything older, all of it saying there is a clash.
+    for (const resolve of held.slice(0, -1)) resolve(CLASH);
+    await settle();
+    expect($('clash').hidden).toBe(true);
+    expect($('clash-line').textContent).toBe('');
+  });
 });
 
 describe('the first-run notice', () => {

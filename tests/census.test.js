@@ -106,6 +106,48 @@ describe('the hosts it publishes', () => {
     expect(routeHosts({ '': PINNED, 'a.example': null, 'b.example': 'yes' })).toEqual([]);
     expect(routeHosts()).toEqual([]);
   });
+
+  it('leaves out a host the never-ask list already releases', () => {
+    // This is the remediation path the warning itself points at, so it has to be
+    // the one that works: somebody puts the shared hosts on the never-ask list
+    // and leaves the rules alone. shouldAsk releases an excluded host before it
+    // reads any rule, so the rule that is still there decides nothing — and a
+    // warning that survives doing what it asked is worse than no warning.
+    expect(
+      routeHosts({ 'docs.example.com': PINNED, 'code.example.com': PINNED }, ['docs.example.com']),
+    ).toEqual(['code.example.com']);
+  });
+
+  it('honours the never-ask list the way the decision reads it, wildcards and all', () => {
+    // matchesAny strips a leading `*.` and matches on a label boundary, so one
+    // entry can cover every rule underneath it. Re-deriving that here instead of
+    // calling it would let the census drift from the decision it describes.
+    expect(
+      routeHosts({ 'docs.example.com': PINNED, 'code.example.com': PINNED }, ['example.com']),
+    ).toEqual([]);
+    expect(routeHosts({ 'docs.example.com': PINNED }, ['*.example.com'])).toEqual([]);
+    // and a suffix that is not a boundary is not covered
+    expect(routeHosts({ 'notexample.com': PINNED }, ['example.com'])).toEqual(['notexample.com']);
+  });
+
+  it('keeps a rule key that cannot be read as a host, rather than dropping it', () => {
+    // Over-warning is the safe direction. A key no URL parser accepts is not one
+    // the never-ask list can cover either, so silence about it would be a guess.
+    expect(routeHosts({ 'not a host': PINNED }, ['example.com'])).toEqual(['not a host']);
+  });
+
+  it('passes the never-ask list through routingState, not just routeHosts', () => {
+    // The wiring is the half that goes missing: routeHosts can be correct while
+    // the caller never hands it the list.
+    expect(
+      routingState({
+        enabled: true,
+        armed: true,
+        rules: { 'docs.example.com': PINNED, 'code.example.com': PINNED },
+        neverAsk: ['docs.example.com'],
+      }),
+    ).toEqual({ routing: true, routes: ['code.example.com'] });
+  });
 });
 
 describe('the overlap between two host lists', () => {
