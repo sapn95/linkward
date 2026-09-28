@@ -203,14 +203,25 @@ describe('what the README says when every link opens twice', () => {
     expect(section).toContain('src/lib/census.js');
   });
 
-  it('says the notice survives the first fix, so its staying does not read as a bug', () => {
-    // Excluding the shared hosts takes them out of the notice but leaves the other
-    // add-on holding every request. Somebody who does what the page asked and
-    // still sees a warning will otherwise conclude the warning is broken.
-    expect(section).toMatch(/does not go away after the first of those/i);
-    expect(section).toMatch(/still holding\s*every request/i);
+  it('says the notice survives the hand-over, so its staying does not read as a bug', () => {
+    // Standing down on the shared hosts takes them out of the pair but leaves the
+    // other add-on holding every request. Somebody who sees the sites handed over
+    // and the warning still up will otherwise conclude the warning is broken.
+    expect(section).toMatch(/notice stays up, and that is deliberate/i);
+    expect(section).toMatch(/still holding\s*every\s*request/i);
     // And that the rules can stay, or they will delete work they do not need to.
     expect(section).toMatch(/leave the rules where they are/i);
+  });
+
+  it('says linkward gives way by itself, and only to a peer that is really routing', () => {
+    // The behaviour has no switch, so the README is where somebody finds out
+    // that the picker not opening on those hosts is the design and not a fault.
+    expect(section).toMatch(/releases those requests untouched/i);
+    expect(section).toMatch(/subdomains count/i);
+    // Deferring to a paused peer opens the link in no container at all, which is
+    // the same bug from the other side and just as quiet.
+    expect(section).toMatch(/actually routing/i);
+    expect(section).toMatch(/paused, in a dry run/i);
   });
 });
 

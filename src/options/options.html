@@ -33,6 +33,14 @@
           <span id="clash-line"></span>
         </p>
         <ul class="clash-list" id="clash-list"></ul>
+
+        <!-- Not a setting, and there is no switch for it on purpose. The
+             behaviour is stated here because it is a decision linkward makes
+             without being asked, and an add-on that quietly stops doing the one
+             thing it is for would be the same class of bug as the pair itself:
+             correct, silent, and impossible to tell from broken. -->
+        <p class="note" id="clash-deferring" hidden></p>
+
         <p class="note">
           Firefox hands the same request to every add-on that asked to hold one, and none of them
           can see the others — there is no way to list another add-on's listeners. So when two of
@@ -40,10 +48,10 @@
           address, same container. Neither add-on is broken, which is why this is easy to live with
           for weeks without working out what it is.
         </p>
-        <p class="note">
-          Pick one of them to do it and switch the other one off — the switch above, if that is
-          linkward. Both being right about where a site belongs does not help; agreeing is what
-          produces the pair.
+        <p class="note" id="clash-rest">
+          Both add-ons are still holding the same requests, so a site neither of them has published
+          a rule for can still open twice. Switch the master switch above off to leave every link to
+          the other one.
         </p>
       </section>
 

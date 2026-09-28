@@ -200,29 +200,50 @@ No add-on can detect this on its own. There is no API that lists another
 extension's `webRequest` listeners, and `management` would want a permission
 whose warning is worse than the problem. So linkward **asks**: it pings the
 add-ons it knows speak
-[container commander's protocol](https://github.com/sapn95/container-commander/blob/main/docs/protocol.md),
-compares their answer with its own, and names the other add-on at the top of its
-settings page along with the sites you both open.
+[container commander's protocol](https://github.com/sapn95/container-commander/blob/main/docs/protocol.md)
+and compares their answer with its own.
 
 Anything that does not answer that ping is invisible to it, which is most things.
 The symptom is the reliable part: **exactly two tabs, every time, for the same
 sites.** One tab in the wrong container is a rule; two tabs is two routers.
 
-There are two fixes and they are both one setting:
+### Where the answer names container commander, linkward gives way
 
-- **Leave those sites to the other add-on** — put them in
-  **Settings → Never ask for**. That is the only setting that makes linkward
-  release the request untouched. Forgetting a remembered site does _not_ do it:
-  linkward then asks about the site instead, and its picker is a redirect, so the
-  pair remains. You can leave the rules where they are; an excluded host is
-  released before any rule is read, and linkward stops listing it to the other
-  add-on for the same reason.
+You do not have to do anything about those sites. Container commander publishes
+the hosts it routes, and linkward **releases those requests untouched** — it does
+not ask, the picker does not open, and the tab goes where commander puts it.
+Subdomains count: a peer that says `example.com` has the whole tree.
+
+Only one of two add-ons has to give way for the pair to stop, and this is the one
+that should. Container commander's rules come from a policy file under review;
+linkward's come from what you clicked. The settings page names the hosts it has
+handed over, because an add-on that quietly stopped asking about seven sites
+would be impossible to tell from one that had broken.
+
+You can **leave the rules where they are**. A handed-over host is released before
+any rule is read, and linkward stops listing it to the other add-on for the same
+reason — so nothing has to be deleted, and everything comes back by itself if the
+other add-on stops routing it.
+
+It gives way only to a peer that says it is **actually routing**. One that is
+paused, in a dry run, or missing its host permission cancels nothing, and
+deferring to it would leave the link to an add-on that has already stood down —
+the same bug from the other side, with the tab opening in no container at all.
+A peer that stops answering is read as gone, and linkward goes back to asking.
+
+### What is left, and the setting for it
+
+The notice stays up, and that is deliberate. Both add-ons are still holding every
+request, so a host **neither** has published a rule for can still open twice.
+
+- **Leave every link to the other add-on** — switch linkward's master switch off.
 - **Leave every link to linkward** — switch interception off in the other add-on.
+  Container commander offers **Stop routing here** in its popup for exactly this.
 
-The notice does not go away after the first of those, and that is deliberate: the
-sites you both opened are gone from it, but the other add-on is still holding
-every request, so a host it starts routing tomorrow is a pair again. Only the
-second fix ends it.
+**Never ask for** still works and still wins over a rule, and it is the answer
+for anything that does not speak the protocol at all — Multi-Account Containers,
+say. Forgetting a remembered site does _not_ do it: linkward then asks about the
+site instead, and its picker is a redirect, so the pair remains.
 
 Being right about where a site belongs does not help either way. Agreeing is what
 produces the pair. The comparison lives in

@@ -51,9 +51,9 @@ export const PEERS = ['container-commander@sapn95.github.io', 'beeline@sapn95.gi
  *
  * @param {{enabled?: boolean, armed?: boolean, rules?: object, neverAsk?: string[]}} state
  */
-export function routingState({ enabled, armed, rules, neverAsk } = {}) {
+export function routingState({ enabled, armed, rules, neverAsk, peerRoutes } = {}) {
   const routing = enabled === true && armed === true;
-  return { routing, routes: routing ? routeHosts(rules, neverAsk) : [] };
+  return { routing, routes: routing ? routeHosts(rules, neverAsk, peerRoutes) : [] };
 }
 
 /**
@@ -74,17 +74,22 @@ export function routingState({ enabled, armed, rules, neverAsk } = {}) {
  * here: a second copy of the suffix rule is a census that disagrees with the
  * decision it is describing.
  *
- * The mirror of this does NOT hold, and it has been proposed twice: dropping a
- * peer from the warning because the never-ask list covers every host it
- * published. It reads like the same rule applied the other way round, and it is
- * not. What a peer publishes is its RULES; what it acts on is wider. Container
- * commander reopens a tab from a bookmark-folder hint with no rule matched at
- * all (`ruleId: bookmark:…` in its engine), on a host that therefore appears in
- * no route list. Release those requests and linkward is still asking about that
- * host, so the pair survives a suppression built on the published list. Over-
- * warning is the safe direction here too.
+ * `peerRoutes` comes off the same rule and is NOT the same claim. Those hosts
+ * are dropped because linkward genuinely releases them now — standsDownFor
+ * checks the identical list before anything else — so publishing them would be
+ * claiming requests this add-on hands straight back.
+ *
+ * What must NOT follow from that, and it has been proposed twice: dropping a
+ * PEER from the warning because everything it published is covered here. It
+ * reads like the same rule applied the other way round, and it is not. What a
+ * peer publishes is its RULES; what it acts on is wider. Container commander
+ * reopens a tab from a bookmark-folder hint with no rule matched at all
+ * (`ruleId: bookmark:…` in its engine), on a host that therefore appears in no
+ * route list — so linkward is still asking about that host and the pair
+ * survives. Over-warning is the safe direction, which is why clashes() reports
+ * a routing peer whether or not anything overlaps.
  */
-export function routeHosts(rules, neverAsk) {
+export function routeHosts(rules, neverAsk, peerRoutes) {
   const out = [];
   for (const [host, rule] of Object.entries(rules ?? {})) {
     if (!host || !rule || typeof rule !== 'object') continue;
@@ -93,10 +98,53 @@ export function routeHosts(rules, neverAsk) {
     // matchesAny reads a URL, and a bare host is not one. A rule key that cannot
     // be made into a URL is kept rather than dropped: over-warning is the safe
     // direction, and a host nobody can parse is not one the list can cover.
-    if (matchesAny(`https://${host}/`, neverAsk)) continue;
+    const url = `https://${host}/`;
+    if (matchesAny(url, neverAsk)) continue;
+    // Left to the peer that already routes it — see standsDownFor. Reporting it
+    // would be claiming a host this add-on releases untouched, and the reader of
+    // that claim is the very add-on the host was handed to.
+    if (matchesAny(url, peerRoutes)) continue;
     out.push(host.toLowerCase());
   }
   return [...new Set(out)];
+}
+
+/**
+ * The hosts a peer is already routing, so linkward can keep out of them.
+ *
+ * Container commander wins on the hosts it manages. That is the decision, made
+ * once and in code rather than offered as a button on two settings pages: when
+ * both add-ons act on one request the browser carries out both, and only one of
+ * them has to give way for that to stop. The one with a policy file behind it is
+ * the one that should not.
+ *
+ * Only a peer that says `routing: true` counts. A peer that is paused, in a dry
+ * run, or missing its host permission cancels nothing, and standing down for it
+ * would leave the request to an add-on that has already stood down itself — the
+ * mirror-image failure, where a link opens in no container at all and both
+ * add-ons report themselves healthy.
+ *
+ * `rule:<id>` entries are dropped. A regex rule is published as its id rather
+ * than its source, so it is a label; keeping it would put a string in the list
+ * that no host can ever match, which is harmless and misleading in a list people
+ * read off the settings page.
+ *
+ * @param {Array<object|null>} answers  one cc:ping reply per peer, nulls allowed
+ * @returns {string[]} host patterns, deduplicated and sorted
+ */
+export function peerRouteHosts(answers = []) {
+  const out = new Set();
+  for (const a of answers) {
+    // Everything here crossed an extension boundary this one does not control.
+    if (!a || typeof a !== 'object' || a.routing !== true) continue;
+    for (const route of Array.isArray(a.routes) ? a.routes : []) {
+      if (typeof route !== 'string') continue;
+      const host = route.trim().toLowerCase();
+      if (!host || host.startsWith('rule:')) continue;
+      out.add(host);
+    }
+  }
+  return [...out].sort();
 }
 
 /**

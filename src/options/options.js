@@ -114,12 +114,39 @@ function showClash(peers) {
   // naming an add-on that stopped clashing ten seconds ago.
   if (!peers?.line) {
     $('clash-line').textContent = '';
+    showDeferring([]);
     box.hidden = true;
     return;
   }
   $('clash-line').textContent = peers.line;
   for (const other of peers.clash ?? []) list.append(clashRow(other));
+  showDeferring(peers.deferring);
   box.hidden = false;
+}
+
+/**
+ * The hosts linkward has handed over, named.
+ *
+ * Container commander wins on the hosts it manages, and linkward releases those
+ * requests without asking. That is the fix for the pair, and it happens without
+ * anybody pressing anything — which is exactly why it is written down here. An
+ * add-on that silently stopped asking about seven hosts would be indistinguish-
+ * able from one that had broken, and this add-on has already shipped that bug
+ * once, in the other direction.
+ */
+function showDeferring(hosts) {
+  const line = $('clash-deferring');
+  const named = (Array.isArray(hosts) ? hosts : []).filter((h) => typeof h === 'string' && h);
+  if (!named.length) {
+    line.textContent = '';
+    line.hidden = true;
+    return;
+  }
+  // textContent: these came from another extension.
+  line.textContent =
+    `Left to it: ${named.join(', ')}. linkward does not ask about those, or about any ` +
+    'subdomain of them, so they open once. Nothing to switch off for that — it is already done.';
+  line.hidden = false;
 }
 
 function clashRow(other) {
@@ -132,14 +159,17 @@ function clashRow(other) {
 
   const shared = document.createElement('span');
   shared.className = 'shared';
-  // Not "forget those below". Forgetting a host makes linkward ASK about it
-  // instead of pinning it, and the picker is a redirect — so the other add-on's
-  // new tab and linkward's question still add up to two tabs. "Never ask for" is
-  // the only setting that makes linkward release the request untouched, which is
-  // what has to happen for the pair to stop.
+  // It used to say: put those in "Never ask for". That was the right advice and
+  // the wrong place to have to take it — the list was on screen, the fix was
+  // three fields away, and until somebody typed it every one of those links
+  // opened twice. linkward now stands down on them by itself, so this states
+  // what happened rather than asking for it.
+  //
+  // Never "forget those": forgetting a host makes linkward ASK about it instead
+  // of pinning it, and the picker is a redirect, so the other add-on's new tab
+  // and linkward's question still add up to two.
   shared.textContent = other.overlap?.length
-    ? `Also opens ${other.overlap.join(', ')} — put those in "Never ask for" below to leave them ` +
-      'to it, or switch one of the two off.'
+    ? `Also opens ${other.overlap.join(', ')}, and has them: linkward releases those untouched.`
     : 'No site in common with the list below, but it is holding the same requests, so a link ' +
       'either of you acts on can still open twice.';
 
