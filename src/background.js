@@ -22,7 +22,7 @@ import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js'
 import { isFirefox, listContainers, resolveRule, hasWatchPermissions } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
-import { PEERS, routingState, clashes, clashLine } from './lib/census.js';
+import { PEERS, routingState, clashes, clashLine, peerRouteHosts } from './lib/census.js';
 
 const PICK_PAGE = 'pick/pick.html';
 // How long to wait for a peer to answer a ping. Generous next to anything in a
@@ -34,6 +34,26 @@ const PING_TIMEOUT_MS = 2000;
 // tab was created for. Long enough for a slow hand-off from another app, short
 // enough that ordinary browsing in that tab is never touched.
 const FRESH_MS = 5000;
+
+// How long a peer's route list is believed before it is asked for again. The
+// list changes when somebody edits a policy file, which is rare and never
+// urgent, and the cost of being a few minutes behind is one question asked that
+// did not need asking — not a link opening in the wrong place.
+const PEER_ROUTES_TTL_MS = 5 * 60 * 1000;
+
+// The hosts container commander is already routing, which linkward leaves to it.
+//
+// Cached, and it has to be: the decision below runs inside a listener that is
+// holding somebody's request open, and asking two other extensions there would
+// put a cross-extension round trip in front of every link. So it is refreshed
+// out of band — at startup, whenever a settings page takes a census, and after
+// the decision that noticed the list had gone stale — and only ever read on the
+// path that matters.
+//
+// Empty is the safe value. It means linkward asks, which is what it did before
+// any of this existed.
+let peerRoutes = [];
+let peerRoutesAt = 0;
 
 // tabId -> when it was flagged. A Map, not storage: this is per-session state
 // and a worker restart should forget it rather than ask about a stale tab.
@@ -110,6 +130,16 @@ async function decide(details) {
     freshMs: FRESH_MS,
   });
   if (!ask) return null;
+  // Container commander manages this host, so linkward releases the request
+  // untouched and asks nothing. Both add-ons acting on one request is what makes
+  // the browser open two tabs for it, and this is the side that gives way.
+  //
+  // After shouldAsk rather than inside it: shouldAsk answers "is this a link
+  // handed over from outside", which is still true here. This is a different
+  // question with a different answer — somebody else has it — and folding the
+  // two together would make a released request indistinguishable from one that
+  // was never ours.
+  if (standsDownFor(details.url)) return null;
   // Read before the flag goes: the picker shows it, and nothing else knows it.
   const since = candidates.get(details.tabId);
   // Answered once per tab: the picker's own navigation must not come back here.
@@ -362,6 +392,11 @@ function arm() {
   armFirefox();
   armChrome();
   armFocus();
+  // Fire and forget, and it must stay that way: arm() runs before any await on
+  // purpose, so that the blocking listener is registered before the first
+  // request arrives. Awaiting a peer here would put a two-second timeout in
+  // front of that.
+  refreshPeerRoutes();
 }
 
 // Before anything else, and before any await: see armFirefox().
@@ -435,6 +470,10 @@ async function myRoutingState() {
     armed: listening && granted,
     rules,
     neverAsk: settings?.neverAsk,
+    // The cache, never a fresh ping. This function answers a peer's cc:ping, and
+    // pinging back from inside that would have two extensions waiting on each
+    // other for an answer neither can give until the other does.
+    peerRoutes,
   });
 }
 
@@ -483,12 +522,69 @@ function ping(id) {
   ]);
 }
 
+/**
+ * Does another add-on already own this host?
+ *
+ * Reads the cache and nothing else, because this is called from inside a
+ * blocking listener. When the cache has gone stale it is refreshed for the NEXT
+ * request rather than this one: waiting would hold the page open on a round trip
+ * to an add-on that may be asleep, and the worst a stale list costs is a
+ * question that did not need asking.
+ *
+ * `matchesAny` is reused rather than reimplemented — a host matches a pattern
+ * and so does every subdomain of it — so "commander manages this host" means
+ * exactly what it means everywhere else in this extension.
+ */
+function standsDownFor(url) {
+  if (Date.now() - peerRoutesAt > PEER_ROUTES_TTL_MS) refreshPeerRoutes();
+  return peerRoutes.length > 0 && matchesAny(url, peerRoutes);
+}
+
+/**
+ * Ask the peers what they are routing and remember it.
+ *
+ * Never awaited by a caller that is holding a request. `answers` is passed in by
+ * takeCensus, which has just asked the same question for the settings page —
+ * two pings for one fact would be the round trip this cache exists to avoid.
+ *
+ * A peer that answers nothing is read as not routing, which is what `ping` and
+ * `clashes` have always done with silence — its listener is registered
+ * synchronously so that a sleeping event page can be started for the ping, so no
+ * answer means not installed rather than not awake. Standing down has to agree
+ * with the warning about the same fact; two halves of one census disagreeing is
+ * the failure this file was written to end.
+ *
+ * It fails towards asking. The pair coming back is visible in one click; links
+ * quietly opening in no container because linkward deferred to an add-on that
+ * has been uninstalled is not.
+ *
+ * A census that throws outright is different, and keeps the previous list: that
+ * is this extension failing, not an answer about the other one.
+ */
+async function refreshPeerRoutes(answers) {
+  if (!isFirefox()) return;
+  try {
+    const replies = answers ?? (await Promise.all(PEERS.map(ping)));
+    peerRoutes = peerRouteHosts(replies);
+    peerRoutesAt = Date.now();
+  } catch {
+    // Left exactly as it was, deliberately. See above.
+  }
+}
+
 async function takeCensus() {
-  const self = await myRoutingState();
-  if (!isFirefox()) return { self, clash: [], line: null };
+  if (!isFirefox()) {
+    return { self: await myRoutingState(), clash: [], line: null, deferring: [] };
+  }
   const answers = await Promise.all(PEERS.map(ping));
+  // Refreshed BEFORE `self` is read, so the routes linkward publishes and the
+  // hosts it is standing down on come from one answer rather than from two a
+  // round trip apart. Read the other way round, the page could show a host as
+  // both claimed and handed over.
+  await refreshPeerRoutes(answers);
+  const self = await myRoutingState();
   const clash = clashes(self, answers);
-  return { self, clash, line: clashLine(clash) };
+  return { self, clash, line: clashLine(clash), deferring: peerRoutes };
 }
 
 /** The options page asks; it does not ping the peers itself. */

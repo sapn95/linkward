@@ -130,14 +130,63 @@ describe('the notice that another add-on is also routing', () => {
     );
   });
 
-  it('points at "Never ask for" rather than at forgetting the site', async () => {
-    // Forgetting a host makes linkward ASK about it instead of pinning it, and the
-    // picker is a redirect — so the other add-on's new tab and linkward's question
-    // still add up to two tabs. "Never ask for" is the only setting that makes
-    // linkward release the request untouched.
+  it('reports the shared hosts as released rather than asking for a setting', async () => {
+    // It used to point at "Never ask for", which was the right advice in the
+    // wrong place: the list was on screen, the fix was three fields away, and
+    // until somebody typed it every one of those links opened twice. linkward
+    // stands down on them itself now, so the row states what happened.
     await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
-    expect($('clash-list').textContent).toMatch(/never ask for/i);
+    expect($('clash-list').textContent).toMatch(/releases those untouched/i);
+    // Never "forget those": forgetting a host makes linkward ASK about it
+    // instead of pinning it, and the picker is a redirect, so the other add-on's
+    // tab and linkward's question still add up to two.
     expect($('clash-list').textContent).not.toMatch(/forget/i);
+  });
+
+  // The behaviour is not a setting and has no switch, which is exactly why it
+  // has to be on the page. An add-on that silently stopped asking about seven
+  // hosts would be indistinguishable from one that had broken.
+  it('names the hosts it has handed over, and says nothing is left to do', async () => {
+    await mount({
+      granted: true,
+      settings: { enabled: true },
+      peers: { ...CLASH, deferring: ['*.example.com', 'code.example.net'] },
+    });
+    const line = $('clash-deferring');
+    expect(line.hidden).toBe(false);
+    expect(line.textContent).toContain('*.example.com, code.example.net');
+    expect(line.textContent).toMatch(/subdomain/i);
+    expect(line.textContent).toMatch(/already done/i);
+  });
+
+  it('stays quiet about a hand-over that has not happened', async () => {
+    await mount({ granted: true, settings: { enabled: true }, peers: CLASH });
+    expect($('clash-deferring').hidden).toBe(true);
+    expect($('clash-deferring').textContent).toBe('');
+  });
+
+  it('takes the hand-over line down with the rest of the warning', async () => {
+    // Same reason the warning itself is cleared and not merely hidden: a stale
+    // list left in a hidden box is one `hidden = false` away from naming hosts
+    // that came back ten seconds ago.
+    await mount({
+      granted: true,
+      settings: { enabled: true },
+      peers: { ...CLASH, deferring: ['*.example.com'] },
+    });
+    expect($('clash-deferring').hidden).toBe(false);
+
+    // Switched off, so the next census finds nothing — including nothing handed
+    // over, because a linkward that is not asking has nothing to hand.
+    globalThis.chrome.runtime.sendMessage = (msg) =>
+      msg?.type === 'linkward:peers'
+        ? Promise.resolve({ clash: [], line: null, deferring: [] })
+        : rulesBackend()(msg);
+    $('enabled').checked = false;
+    $('enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('clash-deferring').hidden).toBe(true);
+    expect($('clash-deferring').textContent).toBe('');
   });
 
   it('says so even when nothing is in common, because both still hold the request', async () => {

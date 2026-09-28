@@ -1162,15 +1162,98 @@ describe('when something else is also deciding where links open', () => {
     expect(answer).toBe('untouched');
   });
 
-  it('names the other add-on and the hosts they both open', async () => {
+  it('names the other add-on, and hands it the hosts it already routes', async () => {
     const c = await boot();
     c.storage.sync.store.rules = { 'docs.example.com': WORK_RULE };
     // A wildcard and a bare host never compare equal, and that pair IS the bug.
     peerRoutes(c, ['*.example.com']);
     const answer = await census(c);
     expect(answer.clash).toHaveLength(1);
-    expect(answer.clash[0].overlap).toEqual(['docs.example.com']);
     expect(answer.line).toMatch(/container commander 0\.5\.2.*two tabs/s);
+    // The peer owns it now, so linkward neither claims it nor overlaps on it.
+    // The host has not vanished from the page: it is reported as handed over.
+    expect(answer.self.routes).toEqual([]);
+    expect(answer.clash[0].overlap).toEqual([]);
+    expect(answer.deferring).toEqual(['*.example.com']);
+  });
+
+  // Container commander wins on the hosts it manages. Not a button on two
+  // settings pages: the add-on with a policy file behind it keeps the host, and
+  // this one gives way, every time and without being asked.
+  describe('standing down where the peer already routes', () => {
+    /** Boot, let the peer publish, and get the cache filled the way a page does. */
+    async function withPeer(c, routes, over = {}) {
+      peerRoutes(c, routes, over);
+      await census(c);
+      return c;
+    }
+
+    it('releases the request instead of asking', async () => {
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      await c.tabs.onCreated.emit({ id: 7 });
+      // {} is "carry on", and nothing was fetched in the wrong container on the
+      // way to it — the request was never cancelled at all.
+      expect(await ask(c, { url: 'https://docs.example.com/x' })).toEqual({});
+    });
+
+    it('covers every subdomain of what the peer published', async () => {
+      // Same rule the rest of this extension matches hosts by. A peer that says
+      // example.com has the whole tree, or the pair comes back one label down.
+      const c = await boot();
+      await withPeer(c, ['example.com']);
+      await c.tabs.onCreated.emit({ id: 7 });
+      expect(await ask(c, { url: 'https://deep.sub.example.com/x' })).toEqual({});
+    });
+
+    it('still asks about everything the peer did not publish', async () => {
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      await c.tabs.onCreated.emit({ id: 7 });
+      expect(await ask(c, { url: 'https://other.example.org/x' })).toHaveProperty('redirectUrl');
+    });
+
+    it('does not stand down for a peer that is not routing', async () => {
+      // Paused, dry run, or missing its host permission: it cancels nothing. A
+      // stand-down here would leave the link to an add-on that has already
+      // stood down itself, and it would open in no container at all — the same
+      // bug seen from the other side, and just as quiet.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com'], { routing: false });
+      await c.tabs.onCreated.emit({ id: 7 });
+      expect(await ask(c, { url: 'https://docs.example.com/x' })).toHaveProperty('redirectUrl');
+    });
+
+    it('goes back to asking once the peer stops answering', async () => {
+      // Silence is read as "not routing" here because that is what it means
+      // everywhere else in the census: the peer registers its listener
+      // synchronously so a sleeping page can be woken for a ping, so no answer
+      // means not installed. Two halves of one census reading one fact two ways
+      // is the failure this whole mechanism exists to end.
+      //
+      // And it fails in the right direction. A returning pair is visible in one
+      // click; links quietly opening in no container, because linkward is still
+      // deferring to an add-on that was removed, is not.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      c.runtime.sendMessage = vi.fn(async () => {
+        throw new Error('gone');
+      });
+      await census(c);
+      await c.tabs.onCreated.emit({ id: 7 });
+      expect(await ask(c, { url: 'https://docs.example.com/x' })).toHaveProperty('redirectUrl');
+    });
+
+    it('never asks a peer from inside the reply to that peer', async () => {
+      // myRoutingState answers cc:ping and reads the cache rather than pinging.
+      // Two add-ons each waiting for the other's answer is a deadlock neither
+      // can log its way out of.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      c.runtime.sendMessage.mockClear();
+      await pinged(c);
+      expect(c.runtime.sendMessage).not.toHaveBeenCalled();
+    });
   });
 
   it('asks every peer, and only for a ping', async () => {

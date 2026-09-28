@@ -18,6 +18,7 @@ import {
   overlapping,
   clashes,
   clashLine,
+  peerRouteHosts,
 } from '../src/lib/census.js';
 
 const PINNED = { container: 'work', cookieStoreId: 'firefox-container-2' };
@@ -293,5 +294,67 @@ describe('the sentence it puts on screen', () => {
   it('is null when nothing clashes, so a page can test it directly', () => {
     expect(clashLine([])).toBeNull();
     expect(clashLine()).toBeNull();
+  });
+});
+
+// Container commander wins on the hosts it manages, and linkward gives way
+// without being asked. This is the list that decision is made from, so every
+// case here is a way of standing down for the wrong reason — or of failing to.
+describe('the hosts a peer has already taken', () => {
+  const ROUTING = { routing: true, routes: ['docs.example.com', '*.example.org'] };
+
+  it('takes the routes of a peer that is really routing', () => {
+    expect(peerRouteHosts([ROUTING])).toEqual(['*.example.org', 'docs.example.com']);
+  });
+
+  it('ignores a peer that cancels nothing', () => {
+    // Paused, dry run, or missing its host permission. Standing down for it
+    // would hand the link to an add-on that has already stood down itself, and
+    // it opens in no container at all — the same bug from the other side.
+    expect(peerRouteHosts([{ ...ROUTING, routing: false }])).toEqual([]);
+    expect(peerRouteHosts([{ ...ROUTING, routing: undefined }])).toEqual([]);
+  });
+
+  it('drops a rule id, which no host can ever match', () => {
+    expect(peerRouteHosts([{ routing: true, routes: ['rule:msal', 'a.example.com'] }])).toEqual([
+      'a.example.com',
+    ]);
+  });
+
+  it('merges the peers into one list, lowercased and without repeats', () => {
+    expect(
+      peerRouteHosts([
+        { routing: true, routes: ['B.example.com'] },
+        { routing: true, routes: ['b.example.com', 'a.example.com'] },
+      ]),
+    ).toEqual(['a.example.com', 'b.example.com']);
+  });
+
+  it('answers with an empty list rather than throwing on junk', () => {
+    // A silent peer is a null, and every field here crossed a boundary this
+    // extension does not control. Empty means linkward asks, which is what it
+    // did before any of this existed.
+    expect(peerRouteHosts()).toEqual([]);
+    expect(peerRouteHosts([null, 'nope', { routing: true }, { routing: true, routes: 7 }])).toEqual(
+      [],
+    );
+    expect(peerRouteHosts([{ routing: true, routes: [42, '', '  '] }])).toEqual([]);
+  });
+});
+
+describe('what linkward publishes once a peer has taken a host', () => {
+  const RULES = {
+    'docs.example.com': { container: 'Work' },
+    'own.example.net': { container: 'W' },
+  };
+
+  it('leaves out what the peer already routes, because it releases those', () => {
+    // Claiming a host it hands straight back would be a claim read by the very
+    // add-on the host was handed to.
+    expect(routeHosts(RULES, [], ['*.example.com'])).toEqual(['own.example.net']);
+  });
+
+  it('publishes everything again once the peer stops routing it', () => {
+    expect(routeHosts(RULES, [], [])).toEqual(['docs.example.com', 'own.example.net']);
   });
 });
