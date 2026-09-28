@@ -22,7 +22,14 @@ import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js'
 import { isFirefox, listContainers, resolveRule, hasWatchPermissions } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
-import { PEERS, routingState, clashes, clashLine, peerRouteHosts } from './lib/census.js';
+import {
+  PEERS,
+  routingState,
+  clashes,
+  clashLine,
+  peerRouteHosts,
+  deferringTo,
+} from './lib/census.js';
 
 const PICK_PAGE = 'pick/pick.html';
 // How long to wait for a peer to answer a ping. Generous next to anything in a
@@ -60,6 +67,10 @@ let peerRoutesAt = 0;
 // all asking the same question, and the slowest of them would land last and win.
 let peerRoutesPinging = null;
 let peerRoutesSeq = 0;
+// Which peers those hosts came from, so each can be told it has been given way
+// to. A peer has no other way to find that out, and without it the one whose
+// hosts were handed over goes on warning about a pair that no longer happens.
+let peerDefersTo = [];
 
 // tabId -> when it was flagged. A Map, not storage: this is per-session state
 // and a worker restart should forget it rather than ask about a stale tab.
@@ -499,10 +510,27 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!PEERS.includes(sender?.id)) return undefined;
   if (msg?.type !== 'cc:ping') return undefined;
   myRoutingState().then(
-    (state) => sendResponse({ id: chrome.runtime.id, name: 'linkward', ...state }),
+    (state) =>
+      sendResponse({
+        id: chrome.runtime.id,
+        name: 'linkward',
+        // Sent because the asker prints it. Without it the warning on the other
+        // side reads "linkward is also routing navigation" with no version, and
+        // there is no way to tell which build is answering.
+        version: chrome.runtime.getManifest?.()?.version,
+        // "I am giving way to you." Only the peers whose hosts are actually
+        // being released; see deferringTo.
+        defersTo: peerDefersTo,
+        ...state,
+      }),
     // A reply that omits `routing` is read as "not routing" by the other side,
     // which is the safe way to fail: it under-warns rather than inventing a clash.
-    () => sendResponse({ id: chrome.runtime.id, name: 'linkward' }),
+    () =>
+      sendResponse({
+        id: chrome.runtime.id,
+        name: 'linkward',
+        version: chrome.runtime.getManifest?.()?.version,
+      }),
   );
   return true;
 });
@@ -621,6 +649,7 @@ async function refreshPeerRoutes(answers) {
 function applyPeerRoutes(replies, seq) {
   if (seq < peerRoutesSeq) return;
   peerRoutes = peerRouteHosts(replies);
+  peerDefersTo = deferringTo(replies);
   peerRoutesAt = Date.now();
 }
 

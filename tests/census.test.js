@@ -19,6 +19,7 @@ import {
   clashes,
   clashLine,
   peerRouteHosts,
+  deferringTo,
 } from '../src/lib/census.js';
 
 const PINNED = { container: 'work', cookieStoreId: 'firefox-container-2' };
@@ -356,5 +357,44 @@ describe('what linkward publishes once a peer has taken a host', () => {
 
   it('publishes everything again once the peer stops routing it', () => {
     expect(routeHosts(RULES, [], [])).toEqual(['docs.example.com', 'own.example.net']);
+  });
+});
+
+// A peer cannot see that it has been given way to. Without this it asks whether
+// linkward is routing, hears yes — it is, on everything the peer did not
+// publish — and raises the same alarm as before, telling somebody to go and
+// switch one of the two off by hand. The arrangement that already fixed it is
+// invisible, so the warning reads as "nothing worked".
+describe('telling a peer it has been given way to', () => {
+  const CC = {
+    id: 'container-commander@sapn95.github.io',
+    routing: true,
+    routes: ['*.example.com'],
+  };
+
+  it('names the peer whose hosts are being released', () => {
+    expect(deferringTo([CC])).toEqual([CC.id]);
+  });
+
+  it('says nothing for a peer that is not routing', () => {
+    expect(deferringTo([{ ...CC, routing: false }])).toEqual([]);
+  });
+
+  it('says nothing for a peer that published nothing linkward can match', () => {
+    // Quieting a warning that is still entirely true would be worse than the
+    // warning. A rule id is a label, so a peer publishing only those has not
+    // been given way to in any sense.
+    expect(deferringTo([{ ...CC, routes: [] }])).toEqual([]);
+    expect(deferringTo([{ ...CC, routes: ['rule:msal'] }])).toEqual([]);
+  });
+
+  it('names each of several peers once, sorted', () => {
+    const other = { id: 'beeline@sapn95.github.io', routing: true, routes: ['a.example.net'] };
+    expect(deferringTo([CC, other, CC])).toEqual([other.id, CC.id]);
+  });
+
+  it('answers with an empty list rather than throwing on junk', () => {
+    expect(deferringTo()).toEqual([]);
+    expect(deferringTo([null, {}, { routing: true, routes: ['a.example.com'] }])).toEqual([]);
   });
 });

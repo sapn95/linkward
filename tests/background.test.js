@@ -55,6 +55,10 @@ function makeChrome({
   const c = {
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
+      // Always there in a real browser. Left out, a reply that should carry a
+      // version carries undefined, and the peer printing it shows a nameless
+      // build — which is how the missing field went out in the first place.
+      getManifest: () => ({ version: '9.9.9' }),
       openOptionsPage: vi.fn(async () => {}),
       // Real one rejects when the tab cannot be made.
       onInstalled: makeEvent(),
@@ -1336,6 +1340,25 @@ describe('when something else is also deciding where links open', () => {
       expect(await ask(c, { url: 'https://docs.example.com/x' })).toEqual({});
     });
 
+    it('tells the peer it has been given way to, and which build is saying so', async () => {
+      // The peer prints the version, and it has no other way to learn that its
+      // own hosts are being released — without this it goes on warning about a
+      // pair that no longer happens.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      expect(await pinged(c)).toMatchObject({
+        name: 'linkward',
+        version: expect.any(String),
+        defersTo: [COMMANDER],
+      });
+    });
+
+    it('claims no hand-over when there is nothing to hand over', async () => {
+      const c = await boot();
+      await withPeer(c, ['docs.example.com'], { routing: false });
+      expect((await pinged(c)).defersTo).toEqual([]);
+    });
+
     it('never asks a peer from inside the reply to that peer', async () => {
       // myRoutingState answers cc:ping and reads the cache rather than pinging.
       // Two add-ons each waiting for the other's answer is a deadlock neither
@@ -1421,7 +1444,14 @@ describe('when something else is also deciding where links open', () => {
     c.storage.sync.get = vi.fn(async () => {
       throw new Error('Storage is unavailable');
     });
-    expect(await pinged(c)).toEqual({ id: undefined, name: 'linkward' });
+    // Named and versioned, but with no `routing` and no `defersTo`: the other
+    // side reads a missing `routing` as "not routing", which under-warns rather
+    // than inventing a clash. Claiming a hand-over here would be worse still —
+    // it would quiet the peer's warning on the strength of a read that failed.
+    const failed = await pinged(c);
+    expect(failed).toEqual({ id: undefined, name: 'linkward', version: '9.9.9' });
+    expect(failed.routing).toBeUndefined();
+    expect(failed.defersTo).toBeUndefined();
     expect(await census(c)).toMatchObject({ clash: [], line: null });
   });
 
