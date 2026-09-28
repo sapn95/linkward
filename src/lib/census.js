@@ -148,6 +148,32 @@ export function peerRouteHosts(answers = []) {
 }
 
 /**
+ * The peers linkward is currently standing down for.
+ *
+ * A peer cannot see that it has been given way to. Container commander asks
+ * whether linkward is routing, hears yes — it is, on everything the peer did
+ * not publish — and raises the same alarm it raised before any of this existed,
+ * telling somebody to go and switch one of the two off by hand. The arrangement
+ * that already fixed it is invisible, so the warning reads as "nothing worked".
+ *
+ * Only a peer that contributed a host counts. One that answered `routing: true`
+ * with nothing linkward could match has not been given way to in any sense, and
+ * saying otherwise would quiet a warning that is still entirely true.
+ *
+ * @param {Array<object|null>} answers  one cc:ping reply per peer, nulls allowed
+ * @returns {string[]} peer ids, deduplicated and sorted
+ */
+export function deferringTo(answers = []) {
+  const out = new Set();
+  for (const a of answers) {
+    if (!a || typeof a !== 'object' || a.routing !== true) continue;
+    if (typeof a.id !== 'string' || !a.id) continue;
+    if (peerRouteHosts([a]).length) out.add(a.id);
+  }
+  return [...out].sort();
+}
+
+/**
  * Peers that are also routing.
  *
  * Only ever a clash when BOTH sides are live. One router is the working state,
