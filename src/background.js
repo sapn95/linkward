@@ -54,6 +54,12 @@ const PEER_ROUTES_TTL_MS = 5 * 60 * 1000;
 // any of this existed.
 let peerRoutes = [];
 let peerRoutesAt = 0;
+// One ping round at a time, and a number saying which round is newest. Both
+// exist because standsDownFor starts a refresh from inside a decision: a burst
+// of links arriving on a stale cache would otherwise start one round per link,
+// all asking the same question, and the slowest of them would land last and win.
+let peerRoutesPinging = null;
+let peerRoutesSeq = 0;
 
 // tabId -> when it was flagged. A Map, not storage: this is per-session state
 // and a worker restart should forget it rather than ask about a stale tab.
@@ -534,6 +540,26 @@ function ping(id) {
  * `matchesAny` is reused rather than reimplemented — a host matches a pattern
  * and so does every subdomain of it — so "commander manages this host" means
  * exactly what it means everywhere else in this extension.
+ *
+ * An expired list is still matched against, and that was raised in review as a
+ * bug. It is the deliberate direction, for a reason the two cases do not share:
+ *
+ *   A silent peer is EVIDENCE it is gone. Its listener is registered
+ *   synchronously so a sleeping event page can be started for the ping, so no
+ *   answer means not installed, and linkward goes back to asking.
+ *
+ *   An expired timestamp is no evidence at all. It says only that nobody has
+ *   asked lately. Refusing to match on it throws away the last answer anybody
+ *   actually got, and it does so at the worst moment: every link that arrives
+ *   in the second or two the refresh takes would be asked about while the peer
+ *   is still routing it, which is the pair, on a burst of links, on a timer.
+ *
+ * So the expired list decides this request and the refresh it starts decides
+ * the next one. The cost of being wrong is one link opening in the default
+ * container instead of asking, for as long as a ping takes, and only if the
+ * peer really did disappear. This state cannot grow old in any other way: it
+ * lives in memory, so a suspended event page comes back with an empty list and
+ * arm() fills it again.
  */
 function standsDownFor(url) {
   if (Date.now() - peerRoutesAt > PEER_ROUTES_TTL_MS) refreshPeerRoutes();
@@ -563,13 +589,39 @@ function standsDownFor(url) {
  */
 async function refreshPeerRoutes(answers) {
   if (!isFirefox()) return;
-  try {
-    const replies = answers ?? (await Promise.all(PEERS.map(ping)));
-    peerRoutes = peerRouteHosts(replies);
-    peerRoutesAt = Date.now();
-  } catch {
-    // Left exactly as it was, deliberately. See above.
-  }
+  // takeCensus has the replies already; there is nothing to ask and nothing to
+  // collapse, so it applies them directly.
+  if (answers) return applyPeerRoutes(answers, ++peerRoutesSeq);
+  // A round is already out asking exactly this. Join it rather than adding a
+  // second one — every caller here wants the same answer, and none of them is
+  // waiting for it.
+  if (peerRoutesPinging) return peerRoutesPinging;
+  const seq = ++peerRoutesSeq;
+  peerRoutesPinging = (async () => {
+    try {
+      applyPeerRoutes(await Promise.all(PEERS.map(ping)), seq);
+    } catch {
+      // Left exactly as it was, deliberately. See above.
+    } finally {
+      peerRoutesPinging = null;
+    }
+  })();
+  return peerRoutesPinging;
+}
+
+/**
+ * Take a set of replies, unless something newer has already landed.
+ *
+ * A round started earlier can finish later — `ping` waits up to two seconds for
+ * a peer that may be asleep, while a settings page hands its replies over at
+ * once. Without the sequence number the slow round would overwrite the fresh
+ * answer with an older one and stamp it with the current time, which is the
+ * worst of both: stale content wearing a new timestamp.
+ */
+function applyPeerRoutes(replies, seq) {
+  if (seq < peerRoutesSeq) return;
+  peerRoutes = peerRouteHosts(replies);
+  peerRoutesAt = Date.now();
 }
 
 async function takeCensus() {

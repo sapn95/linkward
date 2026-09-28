@@ -1244,6 +1244,98 @@ describe('when something else is also deciding where links open', () => {
       expect(await ask(c, { url: 'https://docs.example.com/x' })).toHaveProperty('redirectUrl');
     });
 
+    /** A peer whose answer is held open until the test lets it go. */
+    function slowPeer(c, routes) {
+      const held = [];
+      c.runtime.sendMessage = vi.fn((id, msg) => {
+        if (id !== COMMANDER || msg?.type !== 'cc:ping') return Promise.resolve(undefined);
+        return new Promise((resolve) => {
+          held.push(() =>
+            resolve({ id: COMMANDER, name: 'container commander', routing: true, routes }),
+          );
+        });
+      });
+      return {
+        pings: () =>
+          c.runtime.sendMessage.mock.calls.filter(
+            ([id, m]) => id === COMMANDER && m?.type === 'cc:ping',
+          ),
+        release: async () => {
+          for (const go of held.splice(0)) go();
+          await settle(20);
+        },
+      };
+    }
+
+    it('asks once for a burst of links, not once per link', async () => {
+      // standsDownFor starts the refresh from inside a decision, and does not
+      // wait for it. Five links arriving together on a stale cache used to
+      // start five rounds of two pings, all asking the same question of the
+      // same two add-ons — and the slowest of them landed last and won.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      vi.advanceTimersByTime(6 * 60 * 1000); // past the five-minute cache
+      const peer = slowPeer(c, ['docs.example.com']);
+
+      // Fired without awaiting, so every decision is taken while the first
+      // refresh is still out. Awaiting each one in turn would let the cache go
+      // fresh again between them and test nothing.
+      const inFlight = [];
+      for (const id of [1, 2, 3, 4, 5]) {
+        await c.tabs.onCreated.emit({ id });
+        inFlight.push(ask(c, { url: 'https://other.example.org/x', tabId: id }));
+      }
+      await settle(20);
+      expect(peer.pings()).toHaveLength(1); // one round, one peer that answers
+      await peer.release();
+      await Promise.all(inFlight);
+    });
+
+    it('does not let a slow round overwrite an answer that landed after it', async () => {
+      // A round started earlier can finish later: a ping waits up to two seconds
+      // for a peer that may be asleep, while a settings page hands its replies
+      // over at once. Without the sequence number the slow round wrote stale
+      // content and stamped it with the current time — the worst of both.
+      const c = await boot();
+      // A rule of linkward's own on the host the slow round still believes in.
+      // It is published only while that host is NOT being deferred, which makes
+      // the winning list readable from the outside.
+      c.storage.sync.store.rules = { 'old.example.com': WORK_RULE };
+      await withPeer(c, ['old.example.com']);
+      vi.advanceTimersByTime(6 * 60 * 1000);
+      const peer = slowPeer(c, ['old.example.com']);
+
+      await c.tabs.onCreated.emit({ id: 7 });
+      const held = ask(c, { url: 'https://other.example.org/x' }); // starts the slow round
+      await settle(20);
+
+      // A census lands newer answers while that round is still out.
+      peerRoutes(c, ['new.example.com']);
+      await census(c);
+
+      await peer.release(); // the slow round comes back with the old list
+      await held;
+
+      // Read through cc:ping, which answers from the cache and pings nobody.
+      // Taking another census would re-ask and paper over whichever list won.
+      // old.example.com is published again, so the newer list is the live one;
+      // if the slow round had overwritten it, the host would still be deferred
+      // and this would be empty.
+      expect((await pinged(c)).routes).toEqual(['old.example.com']);
+    });
+
+    it('lets the stale list decide the request that noticed it was stale', async () => {
+      // Raised in review as a bug and kept on purpose. An expired timestamp is
+      // not evidence the peer left — only that nobody asked lately — and
+      // refusing to match on it would ask about every link arriving while the
+      // refresh is in flight, which is the pair again, on a burst, on a timer.
+      const c = await boot();
+      await withPeer(c, ['docs.example.com']);
+      vi.advanceTimersByTime(6 * 60 * 1000);
+      await c.tabs.onCreated.emit({ id: 7 });
+      expect(await ask(c, { url: 'https://docs.example.com/x' })).toEqual({});
+    });
+
     it('never asks a peer from inside the reply to that peer', async () => {
       // myRoutingState answers cc:ping and reads the cache rather than pinging.
       // Two add-ons each waiting for the other's answer is a deadlock neither
