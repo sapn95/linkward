@@ -1173,7 +1173,13 @@ describe('when something else is also deciding where links open', () => {
     peerRoutes(c, ['*.example.com']);
     const answer = await census(c);
     expect(answer.clash).toHaveLength(1);
-    expect(answer.line).toMatch(/container commander 0\.5\.2.*two tabs/s);
+    // And the sentence stops demanding a switch-off. The box used to open with
+    // "Switch it off in one of them" and close, four lines later, with "it is
+    // already done" — one warning contradicting itself.
+    expect(answer.line).toMatch(/container commander 0\.5\.2.*gives way/s);
+    expect(answer.line).not.toMatch(/Switch it off/);
+    // What is left is still said: both still hold every request.
+    expect(answer.line).toMatch(/can still open twice/);
     // The peer owns it now, so linkward neither claims it nor overlaps on it.
     // The host has not vanished from the page: it is reported as handed over.
     expect(answer.self.routes).toEqual([]);
