@@ -234,7 +234,9 @@ A peer that stops answering is read as gone, and linkward goes back to asking.
 ### What is left, and the setting for it
 
 The notice stays up, and that is deliberate. Both add-ons are still holding every
-request, so a host **neither** has published a rule for can still open twice.
+request, so a host **neither** has published a rule for can still open twice. It
+stops telling you to switch one of them off, though — asking for a fix that has
+already happened is how a warning stops being read.
 
 - **Leave every link to the other add-on** — switch linkward's master switch off.
 - **Leave every link to linkward** — switch interception off in the other add-on.

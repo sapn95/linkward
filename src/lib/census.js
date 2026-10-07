@@ -187,6 +187,9 @@ export function deferringTo(answers = []) {
  */
 export function clashes(self, answers = []) {
   if (self?.routing !== true) return [];
+  // Who this add-on is already giving way to. Computed from the same replies, so
+  // the sentence and the hand-over cannot disagree about one census.
+  const gaveWayTo = new Set(deferringTo(answers));
   const found = [];
   for (const a of answers) {
     // Everything here arrived from another extension's message handler, across a
@@ -207,6 +210,19 @@ export function clashes(self, answers = []) {
       version: typeof a.version === 'string' ? a.version : '',
       routes,
       overlap: overlapping(self.routes ?? [], routes),
+      // Marked, not dropped. It still holds the same requests, and linkward
+      // releases only the hosts it published — a site neither of them has a
+      // rule for can still open twice.
+      //
+      // Only with nothing left overlapping, which is not belt and braces: a
+      // host linkward is giving way on leaves its own published routes, so an
+      // overlap that survives means it is still claiming something this peer
+      // claims. Saying "already done" over that would be the box telling a
+      // comfortable half of the truth.
+      gaveWay:
+        typeof a.id === 'string' &&
+        gaveWayTo.has(a.id) &&
+        overlapping(self.routes ?? [], routes).length === 0,
     });
   }
   // The one sharing the most hosts is doing the most damage, and it is the one
@@ -258,6 +274,16 @@ export function clashLine(found = []) {
   const first = found[0];
   const who = [first.name, first.version].filter(Boolean).join(' ');
   const rest = found.length > 1 ? ` (and ${found.length - 1} more)` : '';
+  // Every one of them has already been given way to. The box used to open with
+  // "Switch it off in one of them" and close, four lines later, with "it is
+  // already done" — one warning contradicting itself, which is worse than
+  // either sentence alone. Ask for nothing that has happened.
+  if (found.every((p) => p.gaveWay)) {
+    return (
+      `${who}${rest} is also deciding where links open, and linkward gives way on the sites it` +
+      ' publishes — those open once. A site neither of them has a rule for can still open twice.'
+    );
+  }
   const where = first.overlap.length
     ? ` Both open ${first.overlap.slice(0, 3).join(', ')}${first.overlap.length > 3 ? ', …' : ''}.`
     : '';

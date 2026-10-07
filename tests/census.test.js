@@ -398,3 +398,41 @@ describe('telling a peer it has been given way to', () => {
     expect(deferringTo([null, {}, { routing: true, routes: ['a.example.com'] }])).toEqual([]);
   });
 });
+
+// The box used to open with "Switch it off in one of them" and close, four
+// lines later, with "it is already done". One warning contradicting itself is
+// worse than either sentence alone — the reader cannot tell which half is stale.
+describe('the sentence once linkward has given way', () => {
+  const SELF_GAVE_WAY = { routing: true, routes: [] };
+  const CC = {
+    id: 'container-commander@sapn95.github.io',
+    name: 'container commander',
+    version: '0.8.0',
+    routing: true,
+    routes: ['*.example.com'],
+  };
+
+  it('asks for nothing that has already happened', () => {
+    const line = clashLine(clashes(SELF_GAVE_WAY, [CC]));
+    expect(line).toContain('container commander 0.8.0');
+    expect(line).toMatch(/gives way/);
+    expect(line).not.toMatch(/Switch it off/);
+    // And still says what is left, because both hold every request.
+    expect(line).toMatch(/can still open twice/);
+  });
+
+  it('keeps the demand while anything is still shared', () => {
+    // A host linkward gives way on leaves its own published routes, so an
+    // overlap that survives means it is still claiming something this peer
+    // claims. "Already done" over that would be a comfortable half-truth.
+    const still = { routing: true, routes: ['docs.example.com'] };
+    const [found] = clashes(still, [CC]);
+    expect(found.gaveWay).toBe(false);
+    expect(clashLine([found])).toMatch(/Switch it off in one of them/);
+  });
+
+  it('keeps the demand while any of them has not been given way to', () => {
+    const other = { id: 'b@example.com', name: 'other', routing: true, routes: ['rule:x'] };
+    expect(clashLine(clashes(SELF_GAVE_WAY, [CC, other]))).toMatch(/Switch it off/);
+  });
+});
