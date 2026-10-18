@@ -9,6 +9,7 @@ import {
   containerColor,
 } from '../lib/containers.js';
 import { toTransfer, fromTransfer, fileName } from '../lib/transfer.js';
+import { helperPermission } from '../lib/containers.js';
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
@@ -392,3 +393,93 @@ function say(text) {
 }
 
 await init();
+
+// --- Other browsers ---------------------------------------------------------
+//
+// Three things can be missing and they are not the same thing, so the line
+// under the tick box says which: the permission, the helper, or any browser at
+// all. An empty list with no explanation would read as "this does not work".
+
+async function showBrowserSettings() {
+  const settings = await getSettings().catch(() => ({}));
+  const on = settings.browsers?.enabled === true;
+  $('browsers-enabled').checked = on;
+
+  const reply = await chrome.runtime.sendMessage({ type: 'linkward:browsers' }).catch(() => null);
+
+  const list = $('browsers-list');
+  list.replaceChildren();
+  list.hidden = true;
+
+  if (!on) {
+    $('browsers-state').textContent = '';
+    return;
+  }
+  if (!reply?.granted) {
+    $('browsers-state').textContent =
+      'Firefox has not granted the nativeMessaging permission, so nothing can be asked. Untick and tick this again to be asked for it.';
+    return;
+  }
+  if (!reply.installed) {
+    $('browsers-state').textContent =
+      'The helper is not installed, so there is nothing to ask. Run native/install.sh from the linkward repository, then reload this page.';
+    return;
+  }
+  const all = reply.all ?? [];
+  if (!all.length) {
+    $('browsers-state').textContent = 'The helper found no other browser installed.';
+    return;
+  }
+  const chosen = new Set(settings.browsers?.show ?? []);
+  $('browsers-state').textContent = chosen.size
+    ? `${chosen.size} of ${all.length} shown in the picker.`
+    : `All ${all.length} shown in the picker. Tick some to show only those.`;
+  for (const b of all) {
+    const label = document.createElement('label');
+    label.className = 'check';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = chosen.size === 0 || chosen.has(b.id);
+    box.addEventListener('change', () => pickBrowsers(all));
+    box.dataset.id = b.id;
+    // textContent: the name came out of somebody else's Info.plist.
+    label.append(box, document.createTextNode(` ${b.name}`));
+    list.append(label);
+  }
+  list.hidden = false;
+}
+
+/**
+ * Store the ticked ids.
+ *
+ * All of them ticked is stored as an EMPTY list, not as every id. The list is
+ * then still right after a browser is installed or removed, where a frozen copy
+ * of today's ids would quietly stop showing a new one.
+ */
+async function pickBrowsers(all) {
+  const boxes = [...$('browsers-list').querySelectorAll('input[type=checkbox]')];
+  const ticked = boxes.filter((b) => b.checked).map((b) => b.dataset.id);
+  const settings = await getSettings().catch(() => ({}));
+  await saveSettings({
+    ...settings,
+    browsers: { enabled: true, show: ticked.length === all.length ? [] : ticked },
+  });
+  await showBrowserSettings();
+}
+
+$('browsers-enabled').addEventListener('change', async (event) => {
+  // FIRST, before any await: permissions.request must run inside a user
+  // gesture, and a handler stops being user-initiated the moment it awaits.
+  const wanted = event.target.checked;
+  const granted = wanted ? await chrome.permissions.request(helperPermission()) : true;
+  if (wanted && !granted) {
+    event.target.checked = false;
+    $('browsers-state').textContent = 'Firefox refused, or the request was dismissed.';
+    return;
+  }
+  const settings = await getSettings().catch(() => ({}));
+  await saveSettings({ ...settings, browsers: { ...settings.browsers, enabled: wanted } });
+  await showBrowserSettings();
+});
+
+showBrowserSettings();

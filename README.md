@@ -310,9 +310,43 @@ switch it off.
 | `webRequest`, `webRequestBlocking` | Firefox only. Silently granted. Stopping the request rather than reacting after it.                                                                                   |
 | `webNavigation`                    | Chrome only. There is no blocking form there.                                                                                                                         |
 | `contextualIdentities`, `cookies`  | Firefox only, required by the manifest: reading your containers' names and colours, and honouring a `cookieStoreId` when opening.                                     |
+| `nativeMessaging`                  | Firefox only, and only if you switch on **Other browsers**. It is how the picker reaches the helper that starts a browser which is not this one. See below.           |
 
 linkward reads no page content, stores nothing about where you go, and sends
 nothing anywhere. See [PRIVACY.md](PRIVACY.md).
+
+## Opening a link in another browser
+
+The picker can offer Chrome, Safari, Edge — whatever is installed — under the
+containers. One click hands the link over and closes the window.
+
+**It needs a helper.** A Firefox extension cannot start an application: there is
+no API for it, `protocol_handlers` only registers Firefox _as_ a handler, and
+`downloads.open()` uses whatever the system default already is. So this part
+talks over `nativeMessaging` to a small script you install yourself:
+
+```sh
+./native/install.sh
+```
+
+Then tick **Other browsers** in the settings. Firefox asks for the permission at
+that point, which is why it is optional and nobody sees it at install.
+
+Browsers are found by **capability**, never by a list of known names: a list is
+wrong the first time somebody installs a browser nobody thought of. An app
+qualifies when it declares `http`, `https` **and** `file`. The third one does
+the work — measured on a real machine, iTerm2, Hammerspoon and VLC all claim
+`http` and `https`, and Launch Services agrees they are http handlers. None of
+them claims `file`. A browser opens a local page too.
+
+Tick individual browsers in the settings to show only those. Ticking none shows
+all of them, which is not the same as none: hiding every browser is what
+switching the feature off is for.
+
+The helper reads no page, stores nothing and makes no network request. It
+refuses any URL that is not `http:` or `https:`, and the extension sends it an
+id rather than a path — the picker is web-accessible, so a path could otherwise
+be put into it through the query string. See [native/README.md](native/README.md).
 
 ## Install
 

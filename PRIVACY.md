@@ -43,6 +43,18 @@ your never-ask list is left out, because linkward does not act on it.
 If neither add-on is installed nothing is sent anywhere, and nothing else can ask:
 a message from any other id is ignored without a reply.
 
+If you switch on **Other browsers**, it also sends messages to one program on your
+machine: the helper you installed yourself with `native/install.sh`, reached under
+the fixed name `ch.sapn.linkward`. Two messages exist and no others. One asks which
+browsers are installed. The other says "open this link in that one", and carries
+only the link you were already about to open and the application path the helper
+itself had just reported. The helper reads no page, stores nothing and makes no
+network request of its own.
+
+Firefox asks for the `nativeMessaging` permission when you tick that box, not when
+you install the add-on, and the helper only answers this one extension id. Without
+the helper installed, nothing is sent and the picker shows no browsers.
+
 ## Turning it off
 
 Unticking the setting hands the website access back to the browser

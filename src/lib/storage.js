@@ -36,6 +36,18 @@ export const DEFAULT_SETTINGS = {
   // startedInsideBrowser in candidates.js — so this is the switch for people
   // who would rather be asked about everything than miss one.
   askInternal: false,
+  // Browsers the picker may hand a link to instead of a container.
+  //
+  // Off, and for the same reason `enabled` is: switching it on is what asks for
+  // `nativeMessaging`, and an install that never does holds nothing. The
+  // helper that actually starts a browser is a separate install — a Firefox
+  // extension cannot start an application on its own.
+  //
+  // `show` empty means ALL of them, which is not the same as none. A fresh
+  // install has chosen nothing, and reading that as "hide everything" would
+  // make the feature look broken the moment it is switched on. Hiding all of
+  // them is said with `enabled: false`.
+  browsers: { enabled: false, show: [] },
   // The container picked last, offered first next time. Machine-local.
   lastContainer: '',
 };
@@ -72,6 +84,14 @@ export async function getSettings() {
   // Also off disk. Anything truthy-but-not-true — the string "false", say —
   // would otherwise switch the interception on for bookmarks by accident.
   merged.askInternal = merged.askInternal === true;
+  // Off disk too, and the shape matters more than the values: the picker reads
+  // `show` with Array methods, and a string that survived a bad write would
+  // throw on the page the user is waiting on.
+  const b = merged.browsers;
+  merged.browsers = {
+    enabled: b?.enabled === true,
+    show: Array.isArray(b?.show) ? b.show.filter((v) => typeof v === 'string' && v.trim()) : [],
+  };
   delete merged.rememberChoices;
   return merged;
 }

@@ -114,6 +114,26 @@
       </section>
 
       <section>
+        <h2>Other browsers</h2>
+        <p class="note">
+          The picker can hand a link to a browser that is not Firefox. A Firefox add-on cannot start
+          an application on its own, so this needs a small helper installed alongside it &mdash; run
+          <code>native/install.sh</code> from the linkward repository. Firefox asks for the
+          <b>nativeMessaging</b> permission when you tick this, not when you install the add-on.
+        </p>
+        <label class="check">
+          <input id="browsers-enabled" type="checkbox" />
+          Offer other browsers in the picker
+        </label>
+        <p class="note" id="browsers-state"></p>
+        <!-- One box per browser the helper found. Nothing ticked means ALL of
+             them, which is not the same as none: a fresh install has chosen
+             nothing, and reading that as "hide everything" would make the
+             feature look broken the moment it is switched on. -->
+        <div id="browsers-list" hidden></div>
+      </section>
+
+      <section>
         <h2>Remembered sites</h2>
         <p class="note">
           Answered once on the picker and not asked about again. Change where one of them opens, or

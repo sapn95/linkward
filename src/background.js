@@ -22,6 +22,7 @@ import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js'
 import { isFirefox, listContainers, resolveRule, hasWatchPermissions } from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
+import { readBrowsers, visibleBrowsers } from './lib/browsers.js';
 import {
   PEERS,
   routingState,
@@ -669,6 +670,89 @@ async function takeCensus() {
 }
 
 /** The options page asks; it does not ping the peers itself. */
+// --- Browsers that are not this one ----------------------------------------
+//
+// A WebExtension cannot start another application. There is no API for it, so
+// this goes out over `nativeMessaging` to a helper the user installs — see
+// native/README.md. The permission is optional and the helper is a separate
+// install, which means there are three different "no" answers here and the
+// page has to be able to tell them apart:
+//
+//   enabled: false      the user has not switched the feature on
+//   granted: false      switched on, but the permission was refused or revoked
+//   installed: false    granted, and nothing answered — the helper is missing
+//
+// Collapsing those into an empty list would show a picker with no browsers on
+// it and no way to find out why.
+
+const NATIVE_HOST = 'ch.sapn.linkward';
+
+/** Ask the helper, and answer `null` rather than throwing when it is absent. */
+async function askHelper(message) {
+  try {
+    return await chrome.runtime.sendNativeMessage(NATIVE_HOST, message);
+  } catch {
+    // Not installed, not executable, or it died. All the same to the caller:
+    // there is nothing to open a browser with.
+    return null;
+  }
+}
+
+async function browserChoices() {
+  const settings = await getSettings().catch(() => null);
+  const wanted = settings?.browsers ?? {};
+  if (wanted.enabled !== true)
+    return { enabled: false, granted: false, installed: false, browsers: [] };
+  const granted = await chrome.permissions
+    .contains({ permissions: ['nativeMessaging'] })
+    .catch(() => false);
+  if (!granted) return { enabled: true, granted: false, installed: false, browsers: [] };
+  const reply = await askHelper({ type: 'list' });
+  if (!reply) return { enabled: true, granted: true, installed: false, browsers: [] };
+  const all = readBrowsers(reply);
+  return {
+    enabled: true,
+    granted: true,
+    installed: true,
+    all,
+    browsers: visibleBrowsers(all, wanted),
+  };
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'linkward:browsers') return undefined;
+  browserChoices().then(sendResponse, () =>
+    sendResponse({ enabled: false, granted: false, installed: false, browsers: [] }),
+  );
+  return true;
+});
+
+/**
+ * Hand a link to another browser.
+ *
+ * The path is checked against the list the helper itself reported, not taken
+ * from the message. The picker page is `web_accessible`, so any site can open
+ * it with a query string of its choosing, and a path that arrived that way must
+ * never reach `open -a`. The helper checks again on its side, which is where
+ * the check has to be anyway — this one is so a bad path never gets that far.
+ */
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'linkward:open-in') return undefined;
+  browserChoices()
+    .then(async (state) => {
+      const chosen = (state.browsers ?? []).find((b) => b.id === msg.id);
+      if (!chosen) return { ok: false, why: 'not on the list' };
+      return (
+        (await askHelper({ type: 'open', path: chosen.path, url: msg.url })) ?? {
+          ok: false,
+          why: 'the helper did not answer',
+        }
+      );
+    })
+    .then(sendResponse, () => sendResponse({ ok: false, why: 'could not ask' }));
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== 'linkward:peers') return undefined;
   takeCensus().then(

@@ -24,6 +24,20 @@
 
       <ul id="choices" class="choices" aria-label="Containers"></ul>
 
+      <!-- Browsers, under the containers and visually separate, because they
+           are a different kind of answer: a container keeps the link in this
+           browser, these hand it to another one and this window closes.
+
+           Hidden unless the feature is on AND the helper answered. A Firefox
+           extension cannot start an application on its own, so with no helper
+           there is nothing here that could work — and a button that silently
+           does nothing is the failure this add-on has a catalogue entry
+           about. -->
+      <section id="browsers" hidden>
+        <p class="note browsers-label">Or open it in</p>
+        <ul id="browser-choices" class="choices" aria-label="Browsers"></ul>
+      </section>
+
       <!-- Three equal columns, so the row lines up with the container list
            above it instead of being three different widths. That only works
            with labels short enough not to wrap: what each one does beyond its

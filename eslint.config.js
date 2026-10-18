@@ -18,7 +18,11 @@ export default [
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    // The build scripts and the native messaging helper. The helper runs under
+    // node, outside the browser entirely — it is the only part of this add-on
+    // that does, because starting another application is the one thing a
+    // WebExtension cannot do for itself.
+    files: ['scripts/**/*.mjs', 'native/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
   {
