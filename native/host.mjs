@@ -14,11 +14,18 @@
 // macOS, Linux and Windows. No architecture split: this is a node script, so
 // arm64 and x86-64 run the same file.
 
-import { readdirSync, existsSync, statSync, readFileSync } from 'node:fs';
+import { readdirSync, existsSync, statSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
-import { homedir, platform } from 'node:os';
+import { homedir, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { macBrowser, desktopBrowser, windowsBrowsers, tidy } from './parse.mjs';
+import {
+  macBrowser,
+  desktopBrowser,
+  windowsBrowsers,
+  tidy,
+  macIconFile,
+  desktopIconPath,
+} from './parse.mjs';
 
 const OS = platform();
 
@@ -45,7 +52,14 @@ function macBrowsers() {
       try {
         // plutil rather than a plist parser: binary and XML plists both exist
         // in /Applications, and the one that ships with macOS reads both.
-        info = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist]));
+        // stderr ignored: a bundle with a plist plutil cannot convert is not
+        // an error here, it is simply not a browser — and Firefox logs
+        // whatever this process writes to stderr.
+        info = JSON.parse(
+          execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist], {
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }),
+        );
       } catch {
         continue;
       }
@@ -57,16 +71,17 @@ function macBrowsers() {
 }
 
 // --- Linux ------------------------------------------------------------------
+const desktopDirs = () => [
+  join(homedir(), '.local/share/applications'),
+  '/usr/local/share/applications',
+  '/usr/share/applications',
+  '/var/lib/flatpak/exports/share/applications',
+  join(homedir(), '.local/share/flatpak/exports/share/applications'),
+];
+
 function linuxBrowsers() {
-  const dirs = [
-    join(homedir(), '.local/share/applications'),
-    '/usr/local/share/applications',
-    '/usr/share/applications',
-    '/var/lib/flatpak/exports/share/applications',
-    join(homedir(), '.local/share/flatpak/exports/share/applications'),
-  ];
   const found = [];
-  for (const dir of dirs) {
+  for (const dir of desktopDirs()) {
     if (!existsSync(dir)) continue;
     for (const file of readdirSync(dir)) {
       if (!file.endsWith('.desktop')) continue;
@@ -161,6 +176,97 @@ function openIn(target, url) {
   }
 }
 
+/**
+ * The browser's own icon, small, as a data URL.
+ *
+ * A separate command rather than part of `list`, and asked for after the
+ * buttons are already on screen. The picker is a page somebody is waiting on
+ * with a link in mid-air; four icon conversions in front of the list would be
+ * four reasons to look at nothing.
+ *
+ * A path with no icon to be had is simply missing from the map rather than an
+ * error. Having none is an ordinary outcome — a Linux entry naming a theme
+ * icon, a Windows exe — and the picker shows the name on its own.
+ */
+function iconsFor(paths) {
+  // One scan for the whole set. `sendNativeMessage` starts a fresh process per
+  // message, so asking per browser meant re-reading every Info.plist in
+  // /Applications once per icon — measured at 1.27s for three.
+  const known = new Map(installedBrowsers().map((b) => [b.path, b]));
+  const icons = {};
+  for (const path of Array.isArray(paths) ? paths : []) {
+    const browser = known.get(path);
+    if (!browser) continue;
+    try {
+      if (OS === 'darwin') icons[path] = macIcon(browser.path);
+      else if (OS !== 'win32') icons[path] = fileIcon(linuxIconPath(browser.id));
+      // Windows keeps the icon inside the .exe, and pulling it out needs a
+      // decoder this helper is not going to carry.
+    } catch {
+      // No icon is an ordinary outcome, and the picker shows the name alone.
+    }
+  }
+  return { ok: true, icons };
+}
+
+/** macOS: the bundle's .icns, converted by the tool that ships with it. */
+function macIcon(appPath) {
+  const res = join(appPath, 'Contents', 'Resources');
+  const plist = join(appPath, 'Contents', 'Info.plist');
+  if (!existsSync(plist)) return '';
+  const info = JSON.parse(
+    execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }),
+  );
+  const named = macIconFile(info);
+  let icns = named ? join(res, named) : '';
+  if (!icns || !existsSync(icns)) {
+    // Some bundles name no icon at all. One .icns in Resources is still an
+    // answer; several is a guess, and no icon beats the wrong one.
+    const all = existsSync(res) ? readdirSync(res).filter((f) => f.endsWith('.icns')) : [];
+    if (all.length !== 1) return '';
+    icns = join(res, all[0]);
+  }
+  const out = join(tmpdir(), `linkward-icon-${process.pid}.png`);
+  try {
+    execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-Z', '32', icns, '--out', out], {
+      stdio: 'ignore',
+    });
+    return dataUrl(readFileSync(out));
+  } finally {
+    rmSync(out, { force: true });
+  }
+}
+
+/** Linux: whatever the .desktop entry points at, if it points at a file. */
+function linuxIconPath(id) {
+  for (const dir of desktopDirs()) {
+    const file = join(dir, `${id}.desktop`);
+    if (!existsSync(file)) continue;
+    const path = desktopIconPath(readFileSync(file, 'utf8'));
+    if (path && existsSync(path)) return path;
+  }
+  return '';
+}
+
+// macOS gets `sips -Z 32`, so its icons are ~3KB. A .desktop entry points at
+// whatever is on disk, which can be a 512px PNG, and there is no resizer to
+// assume here. Four of those would be megabytes through a native-messaging
+// channel for decoration — so an oversized icon is no icon.
+const ICON_BYTES_MAX = 256 * 1024;
+
+function fileIcon(path) {
+  if (!path) return '';
+  if (statSync(path).size > ICON_BYTES_MAX) return '';
+  const type = path.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
+  return dataUrl(readFileSync(path), type);
+}
+
+function dataUrl(bytes, type = 'image/png') {
+  return `data:${type};base64,${bytes.toString('base64')}`;
+}
+
 /** Started and let go: this helper exits when Firefox disconnects. */
 function detach(command, args) {
   spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
@@ -184,6 +290,7 @@ process.stdin.on('data', (chunk) => {
       continue;
     }
     if (msg?.type === 'list') send({ ok: true, browsers: installedBrowsers() });
+    else if (msg?.type === 'icons') send(iconsFor(msg.paths));
     else if (msg?.type === 'open') send(openIn(msg.path, msg.url));
     else send({ ok: false, why: 'unknown command' });
   }

@@ -38,7 +38,22 @@ const keyHandlers = [];
   };
 }
 
-async function mount(url, { containers = [], firefox = true, local = {}, sync = {}, age } = {}) {
+async function mount(
+  url,
+  {
+    containers = [],
+    firefox = true,
+    local = {},
+    sync = {},
+    age,
+    // The helper is a separate install, so "nothing" is the normal case.
+    browsers = { enabled: false, granted: false, installed: false, browsers: [] },
+    openReply = { ok: true },
+    // Decoration, and a separate round trip. The default is "none arrived",
+    // which is what a machine without the helper, and every Chromium, gets.
+    iconReply = { icons: {} },
+  } = {},
+) {
   for (const fn of keyHandlers.splice(0)) document.removeEventListener('keydown', fn);
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   const search =
@@ -51,7 +66,21 @@ async function mount(url, { containers = [], firefox = true, local = {}, sync = 
   globalThis.chrome = {
     runtime: {
       getURL: (p) => `${firefox ? 'moz' : 'chrome'}-extension://linkward/${p}`,
-      sendMessage: vi.fn((msg) => rulesBackend()(msg)),
+      // Structured clone, like the real one. A URL object is not cloneable, and
+      // sending one threw DataCloneError on every click while the catch turned
+      // it into "no answer" — a double that accepted anything hid that for a
+      // whole release.
+      sendMessage: vi.fn((msg) => {
+        try {
+          structuredClone(msg);
+        } catch (e) {
+          return Promise.reject(e);
+        }
+        if (msg?.type === 'linkward:browsers') return Promise.resolve(browsers);
+        if (msg?.type === 'linkward:open-in') return Promise.resolve(openReply);
+        if (msg?.type === 'linkward:icons') return Promise.resolve(iconReply);
+        return rulesBackend()(msg);
+      }),
     },
     storage: { sync: makeArea(sync), local: makeArea(local) },
     tabs: {
@@ -506,5 +535,155 @@ describe('what the picker writes when a choice is made', () => {
     $('plain').click();
     await settle(30);
     expect(chrome.storage.local.store.lastContainer).toBe(WORK);
+  });
+});
+
+// A WebExtension cannot start another application, so this goes through a
+// helper — and through a structured clone on the way, which is where the
+// first release of it broke.
+describe('handing the link to another browser', () => {
+  const VIVALDI = { id: 'com.example.vivaldi', name: 'Vivaldi', path: '/Applications/Vivaldi.app' };
+  const withVivaldi = { enabled: true, granted: true, installed: true, browsers: [VIVALDI] };
+
+  it('sends the address as a string, not as the URL object', async () => {
+    // `safeTarget` answers a URL instance. Extension messages go through a
+    // structured clone, which cannot carry one: it throws DataCloneError, and
+    // every click said "no answer" instead.
+    await mount('https://example.com/a?b=1', { browsers: withVivaldi });
+    document.querySelector('#browser-choices button').click();
+    await settle();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'linkward:open-in',
+      id: VIVALDI.id,
+      url: 'https://example.com/a?b=1',
+    });
+    expect($('status').textContent).toBe('');
+  });
+
+  it('shows no browsers when the helper did not answer', async () => {
+    await mount('https://example.com/', {
+      browsers: { enabled: true, granted: true, installed: false, browsers: [] },
+    });
+    expect(document.querySelectorAll('#browser-choices button')).toHaveLength(0);
+    expect($('browsers').hidden).toBe(true);
+  });
+
+  it('says what actually went wrong, never "no answer"', async () => {
+    // Three sources want three sentences. Collapsing them named the one thing
+    // that had not happened and hid the one that had.
+    await mount('https://example.com/', {
+      browsers: withVivaldi,
+      openReply: { ok: false, why: 'the helper did not answer' },
+    });
+    document.querySelector('#browser-choices button').click();
+    await settle();
+    expect($('status').textContent).toMatch(/helper on your computer did not answer/i);
+    expect($('status').textContent).not.toMatch(/no answer$/);
+  });
+
+  it('passes the helper its own words through when they are its own', async () => {
+    await mount('https://example.com/', {
+      browsers: withVivaldi,
+      openReply: { ok: false, why: 'refusing file:' },
+    });
+    document.querySelector('#browser-choices button').click();
+    await settle();
+    expect($('status').textContent).toMatch(/refusing file:/);
+  });
+
+  it('keeps the thrown reason rather than swallowing it', async () => {
+    await mount('https://example.com/', { browsers: withVivaldi, openReply: undefined });
+    chrome.runtime.sendMessage = vi.fn(() =>
+      Promise.reject(new Error('Receiving end does not exist')),
+    );
+    document.querySelector('#browser-choices button').click();
+    await settle();
+    expect($('status').textContent).toMatch(/Receiving end does not exist/);
+  });
+});
+
+// An icon makes a row of names recognisable at a glance, and that is all it
+// does. Everything here is about it never costing anything: not the wait, not
+// the layout, and not the one rule this page is built around.
+describe('the browser icons', () => {
+  const VIVALDI = { id: 'com.example.vivaldi', name: 'Vivaldi', path: '/Applications/Vivaldi.app' };
+  const withVivaldi = { enabled: true, granted: true, installed: true, browsers: [VIVALDI] };
+  const slot = () => document.querySelector('#browser-choices .app');
+
+  it('draws the one the helper sent', async () => {
+    await mount('https://example.com/', {
+      browsers: withVivaldi,
+      iconReply: { icons: { [VIVALDI.id]: 'data:image/png;base64,AAA' } },
+    });
+    const img = slot().querySelector('img');
+    expect(img.src).toBe('data:image/png;base64,AAA');
+    // Empty alt: the name is right next to it, and a screen reader reading
+    // "Vivaldi Vivaldi" is worse than silence.
+    expect(img.alt).toBe('');
+  });
+
+  it('asks only about the browsers it drew', async () => {
+    await mount('https://example.com/', { browsers: withVivaldi });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'linkward:icons',
+      ids: [VIVALDI.id],
+    });
+  });
+
+  it('keeps the name, and the row, when no icon arrives', async () => {
+    await mount('https://example.com/', { browsers: withVivaldi, iconReply: { icons: {} } });
+    const btn = document.querySelector('#browser-choices button');
+    expect(btn.textContent).toBe('Vivaldi');
+    // The empty box stays. The icons land after the buttons are on screen, and
+    // a box that grows then would shift every row under somebody's cursor.
+    expect(slot()).not.toBeNull();
+    expect(slot().querySelector('img')).toBeNull();
+  });
+
+  it('refuses anything that is not a data: image, whatever sent it', async () => {
+    for (const url of [
+      'javascript:alert(1)',
+      'https://tracker.example/p.gif',
+      'data:text/html,x',
+    ]) {
+      await mount('https://example.com/', {
+        browsers: withVivaldi,
+        iconReply: { icons: { [VIVALDI.id]: url } },
+      });
+      expect(slot().querySelector('img')).toBeNull();
+    }
+  });
+
+  it('draws the buttons before the icons are asked for, not after', async () => {
+    // The icons come from a helper process that has to be started and has to
+    // read every application bundle on the machine. A page somebody is looking
+    // at with a link in mid-air does not wait for that.
+    await mount('https://example.com/', {
+      browsers: withVivaldi,
+      iconReply: new Promise(() => {}),
+    });
+    expect(document.querySelectorAll('#browser-choices button')).toHaveLength(1);
+    expect($('browsers').hidden).toBe(false);
+  });
+
+  it('still shows the browsers when the icon round trip throws', async () => {
+    const thrown = { then: undefined };
+    await mount('https://example.com/', { browsers: withVivaldi, iconReply: thrown });
+    expect(document.querySelectorAll('#browser-choices button')).toHaveLength(1);
+    expect(slot().querySelector('img')).toBeNull();
+  });
+
+  it('opens the browser it decorates, not another one', async () => {
+    await mount('https://example.com/', {
+      browsers: withVivaldi,
+      iconReply: { icons: { [VIVALDI.id]: 'data:image/svg+xml,<svg/>' } },
+    });
+    slot().closest('button').click();
+    await settle();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'linkward:open-in',
+      id: VIVALDI.id,
+      url: 'https://example.com/',
+    });
   });
 });

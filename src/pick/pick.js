@@ -276,17 +276,59 @@ async function showBrowsers() {
   }
   const list = reply?.installed ? (reply.browsers ?? []) : [];
   if (!list.length) return;
+  const slots = new Map();
   for (const b of list) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.type = 'button';
+    const slot = document.createElement('span');
+    slot.className = 'app';
     // textContent: the name came out of somebody else's Info.plist.
-    btn.textContent = b.name;
+    btn.append(slot, document.createTextNode(b.name));
     btn.addEventListener('click', () => openInBrowser(b));
     li.append(btn);
     browserChoicesEl.append(li);
+    slots.set(b.id, slot);
   }
   browsersEl.hidden = false;
+  // After the buttons, never before. The icons come from a helper process that
+  // has to be started and has to read every application bundle on the machine;
+  // waiting for that before drawing anything would hold up a page somebody is
+  // looking at with a link in mid-air.
+  showIcons(slots);
+}
+
+/**
+ * Fill in the icons, if they arrive.
+ *
+ * Silent on every failure, and called only once the buttons are in the page:
+ * a button with a name on it already works, and the one thing an icon must not
+ * do is delay or break the choice it decorates.
+ */
+async function showIcons(slots) {
+  let reply;
+  try {
+    reply = await chrome.runtime.sendMessage({
+      type: 'linkward:icons',
+      ids: [...slots.keys()],
+    });
+  } catch {
+    return;
+  }
+  for (const [id, url] of Object.entries(reply?.icons ?? {})) {
+    const slot = slots.get(id);
+    // The background already rejected anything that is not a data: image, and
+    // this checks again rather than trusting that it did. One line, and it is
+    // the line between an icon and a page this add-on exists to keep hostile
+    // input out of.
+    if (!slot || typeof url !== 'string' || !url.startsWith('data:image/')) continue;
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = '';
+    img.width = 16;
+    img.height = 16;
+    slot.append(img);
+  }
 }
 
 /**
@@ -298,23 +340,51 @@ async function showBrowsers() {
  * value on it is treated as hostile.
  */
 async function openInBrowser(browser) {
-  let reply = null;
+  let reply;
+  let threw;
   try {
     reply = await chrome.runtime.sendMessage({
       type: 'linkward:open-in',
       id: browser.id,
-      url: target,
+      // `.href`, not the URL object. Extension messages go through a structured
+      // clone, which cannot carry a URL — it throws DataCloneError, and the
+      // catch below turned that into "no answer" for every single click. The
+      // feature shipped broken and the message hid the reason.
+      url: target.href,
     });
-  } catch {
-    // Left null. The message below says it did not go, which is true.
+  } catch (e) {
+    // Kept, not swallowed. A caught reason nobody is shown is a bug report
+    // that never gets written.
+    threw = String(e?.message ?? e);
   }
   if (reply?.ok) {
     window.close();
     return;
   }
   // Left open on purpose: the link has not gone anywhere, and closing would
-  // lose it. The reason comes from the helper and is shown as text.
-  say(`Could not open ${browser.name}: ${reply?.why ?? 'no answer'}`);
+  // lose it.
+  say(`Could not open ${browser.name}. ${reasonFor(reply, threw)}`);
 }
 
 showBrowsers();
+
+/**
+ * Why it did not open, in words that say what to do next.
+ *
+ * Three sources and they want three different sentences: the helper refused,
+ * the background could not reach it, or the message never left this page. The
+ * old wording collapsed all of them into "no answer", which named the one
+ * thing that had not happened and hid the one that had.
+ */
+function reasonFor(reply, threw) {
+  if (threw) return `linkward could not pass the link on: ${threw}`;
+  const why = typeof reply?.why === 'string' ? reply.why.trim() : '';
+  if (!why) return 'The background page did not answer. Try again.';
+  if (why === 'not on the list') {
+    return 'It is not in the list this add-on was given — reopen the settings page.';
+  }
+  if (why === 'the helper did not answer') {
+    return 'The helper on your computer did not answer. It may have been moved or removed.';
+  }
+  return why;
+}
