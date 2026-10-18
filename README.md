@@ -325,12 +325,25 @@ no API for it, `protocol_handlers` only registers Firefox _as_ a handler, and
 `downloads.open()` uses whatever the system default already is. So this part
 talks over `nativeMessaging` to a small script you install yourself:
 
+Tick **Other browsers** in the settings. If the helper is not there yet, the
+page hands you an installer: one download, one line in a terminal, then
+**Check again**. The script is plain text, it writes two files into your own
+account, and nothing needs an administrator.
+
+Working in a checkout instead:
+
 ```sh
 ./native/install.sh          # macOS and Linux
 .\native\install.ps1         # Windows, in PowerShell
 ```
 
-Then tick **Other browsers** in the settings. Firefox asks for the permission at
+**node has to be found by Firefox, not by your shell.** Firefox starts the
+helper with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` — measured, not assumed — so
+an `#!/usr/bin/env node` line finds nothing when node lives in
+`/opt/homebrew/bin` or a version manager. Every installer resolves node once,
+at install time, and writes a wrapper holding the absolute path. Getting that
+wrong looks exactly like "the helper is not installed", which is the one
+symptom installing it again cannot fix. Firefox asks for the permission at
 that point, which is why it is optional and nobody sees it at install.
 
 Browsers are found by **capability**, never by a list of known names: a list is

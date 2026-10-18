@@ -10,6 +10,12 @@ import {
   containerColor,
 } from '../lib/containers.js';
 import { toTransfer, fromTransfer, fileName } from '../lib/transfer.js';
+import {
+  installerFor,
+  installerCommand,
+  installerFileName,
+  shellFor,
+} from '../lib/helper-install.js';
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
@@ -427,10 +433,16 @@ async function showBrowserSettings() {
     return;
   }
   if (!reply.installed) {
+    // The sentence says what is true and the block below does something about
+    // it. Pointing at a repository was an instruction most people could not
+    // follow, which made this the one state the page could not get out of.
     $('browsers-state').textContent =
-      'The helper is not installed, so there is nothing to ask. Run native/install.sh from the linkward repository, then reload this page.';
+      'Firefox cannot start another browser on its own, so this needs one small helper on your computer. It is not installed yet.';
+    $('helper-install').hidden = false;
+    $('helper-command').textContent = installerCommand(shellFor(navigator.userAgent));
     return;
   }
+  $('helper-install').hidden = true;
   const all = reply.all ?? [];
   if (!all.length) {
     $('browsers-state').textContent = 'The helper found no other browser installed.';
@@ -492,3 +504,61 @@ $('browsers-enabled').addEventListener('change', async (event) => {
 });
 
 showBrowserSettings();
+
+/**
+ * Hand over the installer this add-on is carrying.
+ *
+ * Built here rather than downloaded from anywhere: the two files are inside
+ * the add-on, so what runs is the helper this version expects, and nothing
+ * reaches the network to get it.
+ *
+ * An `<a download>` on a blob, not the downloads API — an extension page can
+ * save a file it made without asking for a permission to do it.
+ */
+async function downloadInstaller() {
+  const shell = shellFor(navigator.userAgent);
+  const read = async (name) => {
+    const res = await fetch(chrome.runtime.getURL(`native/${name}`));
+    return res.text();
+  };
+  let script;
+  try {
+    const [host, parse] = await Promise.all([read('host.mjs'), read('parse.mjs')]);
+    script = installerFor(shell, { host, parse });
+  } catch {
+    script = '';
+  }
+  if (!script) {
+    say('Could not read the helper out of this add-on.');
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([script], { type: 'text/plain' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = installerFileName(shell);
+  a.click();
+  // Revoked on the next turn: the click is synchronous but the save is not,
+  // and a URL revoked in the same tick is a download that never starts.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  say(`Saved ${installerFileName(shell)}. Run the line above, then press Check again.`);
+}
+
+$('helper-download').addEventListener('click', downloadInstaller);
+$('helper-recheck').addEventListener('click', showBrowserSettings);
+
+// The one copy button on this page. Refusing the clipboard is a real answer
+// and a button that silently did nothing would be this section making the
+// same mistake it was written to fix.
+for (const button of document.querySelectorAll('.copy')) {
+  button.addEventListener('click', async () => {
+    const ok = await navigator.clipboard.writeText($(button.dataset.copy).textContent).then(
+      () => true,
+      () => false,
+    );
+    const was = button.textContent;
+    button.textContent = ok ? 'Copied' : 'Select it and copy';
+    setTimeout(() => {
+      button.textContent = was;
+    }, 1600);
+  });
+}

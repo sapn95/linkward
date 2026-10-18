@@ -20,16 +20,18 @@ $ExtId = 'linkward@sapn95.github.io'
 $Here  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Host_ = Join-Path $Here 'host.mjs'
 
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Error 'node is not on PATH; the helper is a node script'
-}
+$Node = (Get-Command node -ErrorAction SilentlyContinue).Source
+if (-not $Node) { Write-Error 'node is not on PATH; the helper is a node script' }
 if (-not (Test-Path $Host_)) { Write-Error "missing $Host_" }
 
 # The wrapper. %* forwards nothing today, and is there because Firefox is
 # entitled to pass arguments and a wrapper that swallowed them would be a bug
 # waiting for the first time it does.
 $Wrapper = Join-Path $Here 'host.cmd'
-"@echo off`r`nnode `"$Host_`" %*" | Set-Content -Path $Wrapper -Encoding ASCII
+# node by ABSOLUTE path. Firefox starts the helper with a minimal environment,
+# so a bare `node` is not found wherever it actually lives — measured on macOS,
+# where Firefox has PATH=/usr/bin:/bin:/usr/sbin:/sbin and node does not.
+"@echo off`r`n`"$Node`" `"$Host_`" %*" | Set-Content -Path $Wrapper -Encoding ASCII
 
 $Manifest = Join-Path $Here "$Name.json"
 @{

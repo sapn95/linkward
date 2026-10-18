@@ -25,7 +25,17 @@ exactly one extension id to talk to it. Then switch the feature on in linkward's
 settings — Firefox asks for the `nativeMessaging` permission at that point,
 which is why the permission is **optional** and nobody sees it at install.
 
-Needs `node` on `PATH`. No architecture split: this is a node script, so arm64
+Needs `node` on **your** `PATH` at install time, and not on Firefox's: the
+installer resolves it once and writes a wrapper holding the absolute path.
+Firefox starts the helper with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` — measured,
+not assumed — so an `#!/usr/bin/env node` line finds nothing when node lives in
+`/opt/homebrew/bin` or a version manager. Getting that wrong looks exactly like
+"the helper is not installed", which is the one symptom installing it again
+cannot fix.
+
+Most people never run these scripts. linkward's settings page carries both
+sources and writes an installer for the machine it is running on, so switching
+the feature on is a download and one line. No architecture split: this is a node script, so arm64
 and x86-64 run the same file.
 
 Windows differs in two ways, which is why it has its own script. Firefox finds

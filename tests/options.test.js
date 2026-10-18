@@ -934,13 +934,25 @@ describe('the other-browsers section', () => {
       settings: { browsers: { enabled: true } },
       browsers: { enabled: true, granted: true, installed: false, browsers: [] },
     });
-    expect($('browsers-state').textContent).toMatch(/helper is not installed/i);
+    expect($('browsers-state').textContent).toMatch(/not installed yet/i);
+    // And the page does something about it rather than naming a repository
+    // most people reading this will never have.
+    expect($('helper-install').hidden).toBe(false);
+    expect($('helper-command').textContent).toMatch(/linkward-helper/);
 
     await mount({
       settings: { browsers: { enabled: true } },
       browsers: { enabled: true, granted: true, installed: true, all: [], browsers: [] },
     });
     expect($('browsers-state').textContent).toMatch(/no other browser/i);
+  });
+
+  it('puts the installer away once the helper answers', async () => {
+    await mount({
+      settings: { browsers: { enabled: true } },
+      browsers: { enabled: true, granted: true, installed: true, all: [], browsers: [] },
+    });
+    expect($('helper-install').hidden).toBe(true);
   });
 
   it('lists what the helper found, all ticked when nothing was chosen', async () => {
