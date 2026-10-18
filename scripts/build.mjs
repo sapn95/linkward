@@ -61,6 +61,13 @@ if (firefox) {
   manifest.description =
     'Asks where a link should open, before it opens. Or copies the URL and opens nothing.';
   // Chrome MV3 has no blocking webRequest, so the Chrome build asks AFTER the
+  // The helper that opens another browser is installed by native/install.sh,
+  // which writes a Firefox native-messaging manifest. Nothing on Chrome reads
+  // it, so declaring the permission there would name a capability with nothing
+  // on the other end of it.
+  manifest.optional_permissions = manifest.optional_permissions.filter(
+    (p) => p !== 'nativeMessaging',
+  );
   // navigation starts rather than before it, through webNavigation — see
   // docs/architecture.md. Neither webRequest permission is ever requested
   // there, and the store rejects a version that declares what it does not use.

@@ -26,6 +26,8 @@ const hostEl = document.getElementById('host');
 const rememberEl = document.getElementById('remember');
 const noteEl = document.getElementById('note');
 const statusEl = document.getElementById('status');
+const browsersEl = document.getElementById('browsers');
+const browserChoicesEl = document.getElementById('browser-choices');
 
 /** Only ever open something we would have intercepted in the first place. */
 function safeTarget(value) {
@@ -250,3 +252,69 @@ function say(text) {
 }
 
 await init();
+
+/**
+ * The browsers this link can be handed to instead of a container.
+ *
+ * Drawn only when the helper answered. The four "no" answers the background
+ * can give — switched off, permission refused, helper missing, nothing
+ * installed — all end here as "do not draw the section", because the picker is
+ * not the place to explain any of them. It is a page somebody is waiting on
+ * with a link in mid-air. The settings page says which one it is.
+ */
+async function showBrowsers() {
+  // try/catch around the whole call rather than `.catch` on it. A browser
+  // always hands back a promise here; a background page that is gone, or a
+  // build where the message is unknown, does not have to — and this runs on a
+  // page somebody is waiting on with a link in mid-air, where a thrown error
+  // would take the rest of the script with it.
+  let reply;
+  try {
+    reply = await chrome.runtime.sendMessage({ type: 'linkward:browsers' });
+  } catch {
+    return;
+  }
+  const list = reply?.installed ? (reply.browsers ?? []) : [];
+  if (!list.length) return;
+  for (const b of list) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    // textContent: the name came out of somebody else's Info.plist.
+    btn.textContent = b.name;
+    btn.addEventListener('click', () => openInBrowser(b));
+    li.append(btn);
+    browserChoicesEl.append(li);
+  }
+  browsersEl.hidden = false;
+}
+
+/**
+ * Hand the link over, and say so if it did not go.
+ *
+ * The id is sent, never the path. The background looks the path up in the list
+ * the helper itself reported, so a path cannot be put into this page through
+ * the query string and reach `open -a` — this page is web-accessible and every
+ * value on it is treated as hostile.
+ */
+async function openInBrowser(browser) {
+  let reply = null;
+  try {
+    reply = await chrome.runtime.sendMessage({
+      type: 'linkward:open-in',
+      id: browser.id,
+      url: target,
+    });
+  } catch {
+    // Left null. The message below says it did not go, which is true.
+  }
+  if (reply?.ok) {
+    window.close();
+    return;
+  }
+  // Left open on purpose: the link has not gone anywhere, and closing would
+  // lose it. The reason comes from the helper and is shown as text.
+  say(`Could not open ${browser.name}: ${reply?.why ?? 'no answer'}`);
+}
+
+showBrowsers();

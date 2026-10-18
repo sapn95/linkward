@@ -70,6 +70,12 @@ function makeChrome({
       // Nothing is installed alongside by default: absence is the normal case,
       // and every test that wants a peer says so.
       sendMessage: vi.fn(async () => undefined),
+      // The native helper. Absent by default, because that is the normal case:
+      // a Firefox extension cannot start an application, and the helper is a
+      // separate install most profiles will never have.
+      sendNativeMessage: vi.fn(async () => {
+        throw new Error('no such native application');
+      }),
     },
     action: { onClicked: makeEvent() },
     // storage.session is where the focus state outlives an event page that the
@@ -1497,5 +1503,123 @@ describe('when the settings page will not open', () => {
     await settle(20);
     process.off('unhandledRejection', unhandled);
     expect(unhandled).not.toHaveBeenCalled();
+  });
+});
+
+// A Firefox extension cannot start another application. The list below arrives
+// from a helper the user installs separately, so there are three different
+// "no" answers and the settings page has to tell them apart — an empty picker
+// with no explanation reads as "this is broken".
+describe('handing a link to another browser', () => {
+  const CHROME = { id: 'com.example.chrome', name: 'Chrome', path: '/Applications/Chrome.app' };
+
+  async function ask(c, message) {
+    let answer;
+    c.runtime.onMessage.emitSync(message, {}, (r) => {
+      answer = r;
+    });
+    await settle(30);
+    return answer;
+  }
+
+  /** A helper that answers, and the settings that let it be asked. */
+  async function withHelper(over = {}, browsers = [CHROME]) {
+    const c = await boot({ settings: { enabled: true, browsers: { enabled: true, ...over } } });
+    c.permissions.contains = vi.fn(async () => true);
+    c.runtime.sendNativeMessage = vi.fn(async (_host, msg) =>
+      msg?.type === 'list' ? { ok: true, browsers } : { ok: true },
+    );
+    return c;
+  }
+
+  it('says nothing is on while the feature is switched off', async () => {
+    const c = await boot({ settings: { enabled: true } });
+    expect(await ask(c, { type: 'linkward:browsers' })).toMatchObject({
+      enabled: false,
+      browsers: [],
+    });
+    expect(c.runtime.sendNativeMessage).not.toHaveBeenCalled();
+  });
+
+  it('separates a refused permission from a missing helper', async () => {
+    // Collapsing the two into an empty list would leave the settings page with
+    // nothing to say about which one it is.
+    const c = await boot({ settings: { enabled: true, browsers: { enabled: true } } });
+    c.permissions.contains = vi.fn(async () => false);
+    expect(await ask(c, { type: 'linkward:browsers' })).toMatchObject({
+      granted: false,
+      installed: false,
+    });
+
+    const d = await boot({ settings: { enabled: true, browsers: { enabled: true } } });
+    d.permissions.contains = vi.fn(async () => true);
+    expect(await ask(d, { type: 'linkward:browsers' })).toMatchObject({
+      granted: true,
+      installed: false,
+    });
+  });
+
+  it('reports what the helper found', async () => {
+    const c = await withHelper();
+    const reply = await ask(c, { type: 'linkward:browsers' });
+    expect(reply).toMatchObject({ enabled: true, granted: true, installed: true });
+    expect(reply.browsers).toEqual([CHROME]);
+  });
+
+  it('shows only the chosen ones, and all of them when none is chosen', async () => {
+    const other = { id: 'com.example.safari', name: 'Safari', path: '/Applications/Safari.app' };
+    const all = [CHROME, other];
+    expect((await ask(await withHelper({}, all), { type: 'linkward:browsers' })).browsers).toEqual(
+      all,
+    );
+    const picked = await withHelper({ show: [other.id] }, all);
+    expect((await ask(picked, { type: 'linkward:browsers' })).browsers).toEqual([other]);
+  });
+
+  it('opens by id, and sends the path the helper itself reported', async () => {
+    // The picker page is web-accessible, so a path can be put into it through
+    // the query string. It must never reach `open -a`, which is why the id is
+    // what travels and the path is looked up here.
+    const c = await withHelper();
+    const reply = await ask(c, {
+      type: 'linkward:open-in',
+      id: CHROME.id,
+      url: 'https://example.com/',
+    });
+    expect(reply).toMatchObject({ ok: true });
+    expect(c.runtime.sendNativeMessage).toHaveBeenCalledWith(expect.any(String), {
+      type: 'open',
+      path: CHROME.path,
+      url: 'https://example.com/',
+    });
+  });
+
+  it('refuses a browser that is not on the list', async () => {
+    const c = await withHelper({ show: ['com.example.safari'] });
+    const reply = await ask(c, {
+      type: 'linkward:open-in',
+      id: CHROME.id,
+      url: 'https://example.com/',
+    });
+    expect(reply).toMatchObject({ ok: false });
+    expect(c.runtime.sendNativeMessage).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ type: 'open' }),
+    );
+  });
+
+  it('says so when the helper does not answer the open', async () => {
+    const c = await withHelper();
+    c.runtime.sendNativeMessage = vi.fn(async (_h, msg) => {
+      if (msg?.type === 'list') return { ok: true, browsers: [CHROME] };
+      throw new Error('gone');
+    });
+    const reply = await ask(c, {
+      type: 'linkward:open-in',
+      id: CHROME.id,
+      url: 'https://example.com/',
+    });
+    expect(reply.ok).toBe(false);
+    expect(reply.why).toMatch(/did not answer/);
   });
 });

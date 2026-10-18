@@ -128,6 +128,19 @@ export function watchPermissions(firefox = isFirefox()) {
   };
 }
 
+/**
+ * The permission that lets the picker hand a link to another browser.
+ *
+ * Optional, and Firefox only. A WebExtension cannot start an application, so
+ * this talks to a helper the user installs separately — and the installer in
+ * `native/` writes a Firefox manifest. Declaring it on Chrome would put
+ * "exchange messages with programs other than Firefox" in a store listing for a
+ * feature that has nothing on the other end.
+ */
+export function helperPermission() {
+  return { permissions: ['nativeMessaging'] };
+}
+
 /** The Firefox build, told apart by its own extension origin. No permission. */
 export function isFirefox() {
   try {

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Asks which container to open a link in \u2014 before it opens. Or just copies the URL and opens nothing.",
   "permissions": ["storage", "contextualIdentities", "cookies"],
-  "optional_permissions": ["webRequest", "webRequestBlocking", "webNavigation"],
+  "optional_permissions": ["webRequest", "webRequestBlocking", "webNavigation", "nativeMessaging"],
   "optional_host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",

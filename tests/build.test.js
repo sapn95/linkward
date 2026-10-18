@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { watchPermissions } from '../src/lib/containers.js';
+import { watchPermissions, helperPermission } from '../src/lib/containers.js';
 
 const ROOT = process.cwd();
 const read = (dir) => JSON.parse(readFileSync(join(ROOT, dir, 'manifest.json'), 'utf8'));
@@ -37,7 +37,18 @@ describe('what each build asks the store to grant', () => {
 
   it('declares nothing beyond what it requests', () => {
     expect(chrome.optional_permissions.sort()).toEqual(watchPermissions(false).permissions.sort());
-    expect(firefox.optional_permissions.sort()).toEqual(watchPermissions(true).permissions.sort());
+    expect(firefox.optional_permissions.sort()).toEqual(
+      [...watchPermissions(true).permissions, ...helperPermission().permissions].sort(),
+    );
+  });
+
+  it('keeps the browser helper out of the Chrome build', () => {
+    // native/install.sh writes a Firefox native-messaging manifest. Declaring
+    // the permission on Chrome would put "exchange messages with programs other
+    // than Firefox" in a store listing for a feature with nothing on the other
+    // end of it.
+    expect(chrome.optional_permissions).not.toContain('nativeMessaging');
+    expect(firefox.optional_permissions).toContain('nativeMessaging');
   });
 
   it('keeps containers out of the Chrome build entirely', () => {

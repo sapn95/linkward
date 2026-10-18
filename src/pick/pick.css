@@ -330,3 +330,19 @@ textarea {
   color: var(--fg);
   border-color: var(--accent);
 }
+
+/* Browsers, under the containers.
+ *
+ * Separated by a rule and a label rather than by a gap: a container keeps the
+ * link in this browser and these hand it to another one, which is a different
+ * kind of answer and has to read as one. Without the line the two lists look
+ * like one list with a caption in the middle of it. */
+#browsers {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.browsers-label {
+  margin: 0 0 10px;
+}
