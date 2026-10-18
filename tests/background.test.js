@@ -1608,6 +1608,75 @@ describe('handing a link to another browser', () => {
     );
   });
 
+  it('asks for every shown icon in one call, not one call per browser', async () => {
+    // `sendNativeMessage` starts a fresh helper process per message, and the
+    // helper reads every application bundle on the machine to know which ones
+    // are browsers. Measured at 1.27s for three icons asked separately.
+    const other = { id: 'com.example.safari', name: 'Safari', path: '/Applications/Safari.app' };
+    const c = await withHelper({}, [CHROME, other]);
+    c.runtime.sendNativeMessage = vi.fn(async (_h, msg) =>
+      msg?.type === 'list'
+        ? { ok: true, browsers: [CHROME, other] }
+        : { ok: true, icons: { [CHROME.path]: 'data:image/png;base64,AAA' } },
+    );
+    const reply = await ask(c, { type: 'linkward:icons', ids: [CHROME.id, other.id] });
+    expect(reply.icons).toEqual({ [CHROME.id]: 'data:image/png;base64,AAA' });
+    const icons = c.runtime.sendNativeMessage.mock.calls.filter(([, m]) => m?.type === 'icons');
+    expect(icons).toHaveLength(1);
+    expect(icons[0][1].paths).toEqual([CHROME.path, other.path]);
+  });
+
+  it('answers by id, so no path reaches the picker page', async () => {
+    const c = await withHelper();
+    c.runtime.sendNativeMessage = vi.fn(async (_h, msg) =>
+      msg?.type === 'list'
+        ? { ok: true, browsers: [CHROME] }
+        : { ok: true, icons: { [CHROME.path]: 'data:image/png;base64,AAA' } },
+    );
+    const reply = await ask(c, { type: 'linkward:icons', ids: [CHROME.id] });
+    expect(Object.keys(reply.icons)).toEqual([CHROME.id]);
+  });
+
+  it('passes on nothing that is not a data: image', async () => {
+    // The helper is a local program the user installed, but this goes straight
+    // into an `img.src` on a web-accessible page. A javascript: or http: URL
+    // would be a request, or worse, made by the picker.
+    const hostile = [
+      'javascript:alert(1)',
+      'https://tracker.example/pixel.gif',
+      'data:text/html,x',
+    ];
+    for (const url of hostile) {
+      const c = await withHelper();
+      c.runtime.sendNativeMessage = vi.fn(async (_h, msg) =>
+        msg?.type === 'list'
+          ? { ok: true, browsers: [CHROME] }
+          : { ok: true, icons: { [CHROME.path]: url } },
+      );
+      expect((await ask(c, { type: 'linkward:icons', ids: [CHROME.id] })).icons).toEqual({});
+    }
+  });
+
+  it('refuses an icon for a browser the settings hide', async () => {
+    const other = { id: 'com.example.safari', name: 'Safari', path: '/Applications/Safari.app' };
+    const c = await withHelper({ show: [other.id] }, [CHROME, other]);
+    const reply = await ask(c, { type: 'linkward:icons', ids: [CHROME.id] });
+    expect(reply.icons).toEqual({});
+    expect(c.runtime.sendNativeMessage).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ type: 'icons' }),
+    );
+  });
+
+  it('answers an empty map when the helper dies mid-icon', async () => {
+    const c = await withHelper();
+    c.runtime.sendNativeMessage = vi.fn(async (_h, msg) => {
+      if (msg?.type === 'list') return { ok: true, browsers: [CHROME] };
+      throw new Error('gone');
+    });
+    expect(await ask(c, { type: 'linkward:icons', ids: [CHROME.id] })).toEqual({ icons: {} });
+  });
+
   it('says so when the helper does not answer the open', async () => {
     const c = await withHelper();
     c.runtime.sendNativeMessage = vi.fn(async (_h, msg) => {

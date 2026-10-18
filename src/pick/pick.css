@@ -133,6 +133,24 @@ section h2 + .field {
   background: var(--muted);
 }
 
+/* Sized whether or not an icon ever arrives. The icons come in after the
+   buttons are already on screen, and an empty box that then grows would shift
+   every row under somebody's cursor mid-click. Same 16px as the icon the
+   helper renders. */
+.app {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+.app img {
+  width: 16px;
+  height: 16px;
+}
+
 .row {
   /* A grid, not a flex row: three equal columns line the buttons up with the
      full-width container list above them. Flex sized each one to its label, so

@@ -46,12 +46,24 @@ wrapper is written beside it and that is what gets registered. The key goes in
 
 ## What it does
 
-Two commands and deliberately no more.
+Three commands and deliberately no more.
 
 | Command | Answer                                                                     |
 | ------- | -------------------------------------------------------------------------- |
 | `list`  | every installed app that declares it can open an `http` URL, minus Firefox |
 | `open`  | runs `open -a <app> <url>`                                                 |
+| `icons` | a 32px PNG as a `data:` URL for each path given, for the picker's buttons  |
+
+`icons` takes the whole set in one message, not one path per message. Firefox
+starts a fresh helper process per `sendNativeMessage`, and the first thing this
+one does is read every application bundle on the machine — asking per icon paid
+that scan once per button, measured at 1.27s for three. One call for four is
+0.66s, nearly all of it the single scan.
+
+An icon is decoration, so every failure answers with that path simply missing
+from the map and the picker draws the name alone. On Windows the map comes back
+empty: the icon lives inside the `.exe`, and pulling it out needs a decoder
+this helper is not going to carry.
 
 Browsers are found by **capability**, never by a list of known names: a list is
 wrong the first time somebody installs a browser nobody thought of, and it would

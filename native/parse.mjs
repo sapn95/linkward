@@ -116,6 +116,40 @@ function isFirefox(value) {
   return /firefox/i.test(text(value));
 }
 
+/**
+ * The icon file a macOS bundle names, as a file name.
+ *
+ * `CFBundleIconFile` is allowed to leave the extension off — Safari ships
+ * `AppIconUpdated` and Chrome ships `app.icns`, both legal — so the suffix is
+ * added when it is missing rather than assumed either way.
+ *
+ * @returns {string} a file name, or '' when the bundle names none
+ */
+export function macIconFile(info) {
+  const named = text(info?.CFBundleIconFile);
+  if (!named) return '';
+  return named.toLowerCase().endsWith('.icns') ? named : `${named}.icns`;
+}
+
+/**
+ * The icon a .desktop entry names.
+ *
+ * Only an absolute path is usable here. The freedesktop spec also allows a
+ * bare theme name, which would mean walking the icon theme to resolve — a
+ * search this helper has no business doing, and whose failure would be a
+ * broken image rather than no image.
+ *
+ * @returns {string} an absolute path, or '' when it is a theme name
+ */
+export function desktopIconPath(body) {
+  const entry = text(body)
+    .split(/^\[/m)
+    .find((s) => s.startsWith('Desktop Entry'));
+  if (!entry) return '';
+  const icon = text(entry.match(/^Icon=(.*)$/m)?.[1]);
+  return icon.startsWith('/') ? icon : '';
+}
+
 /** One list, deduplicated and in reading order. */
 export function tidy(found) {
   const byId = new Map();

@@ -6,7 +6,14 @@
 // output of `reg query …\StartMenuInternet`.
 
 import { describe, it, expect } from 'vitest';
-import { macBrowser, desktopBrowser, windowsBrowsers, tidy } from '../native/parse.mjs';
+import {
+  macBrowser,
+  desktopBrowser,
+  windowsBrowsers,
+  tidy,
+  macIconFile,
+  desktopIconPath,
+} from '../native/parse.mjs';
 
 describe('macOS', () => {
   const plist = (schemes, over = {}) => ({
@@ -160,5 +167,52 @@ describe('one list out of all of them', () => {
 
   it('drops an entry with no id', () => {
     expect(tidy([null, {}, { id: '', name: 'x' }])).toEqual([]);
+  });
+});
+
+// An icon is decoration, so every one of these answers '' rather than a guess.
+// A guessed path is a file read that fails, once per browser, on a helper the
+// user cannot see the output of.
+describe('the icon a bundle names', () => {
+  it('adds the suffix when the plist leaves it off', () => {
+    // Both are legal and both ship: Safari names `AppIconUpdated`, Chrome
+    // names `app.icns`.
+    expect(macIconFile({ CFBundleIconFile: 'AppIconUpdated' })).toBe('AppIconUpdated.icns');
+  });
+
+  it('keeps the suffix the plist already has, in either case', () => {
+    expect(macIconFile({ CFBundleIconFile: 'app.icns' })).toBe('app.icns');
+    expect(macIconFile({ CFBundleIconFile: 'App.ICNS' })).toBe('App.ICNS');
+  });
+
+  it('answers nothing for a bundle that names no icon', () => {
+    expect(macIconFile({})).toBe('');
+    expect(macIconFile(null)).toBe('');
+    expect(macIconFile({ CFBundleIconFile: '   ' })).toBe('');
+  });
+});
+
+describe('the icon a .desktop entry names', () => {
+  const entry = (icon) => `[Desktop Entry]\nName=Browser\nIcon=${icon}\n`;
+
+  it('takes an absolute path', () => {
+    expect(desktopIconPath(entry('/usr/share/icons/b.png'))).toBe('/usr/share/icons/b.png');
+  });
+
+  it('refuses a bare theme name rather than resolving the icon theme', () => {
+    // The spec allows it. Walking the theme is a search this helper has no
+    // business doing, and its failure would be a broken image, not no image.
+    expect(desktopIconPath(entry('firefox'))).toBe('');
+  });
+
+  it('reads only the [Desktop Entry] section', () => {
+    const withAction = `[Desktop Action new]\nIcon=/wrong.png\n[Desktop Entry]\nIcon=/right.png\n`;
+    expect(desktopIconPath(withAction)).toBe('/right.png');
+  });
+
+  it('answers nothing for an entry with no icon and for no entry at all', () => {
+    expect(desktopIconPath('[Desktop Entry]\nName=Browser\n')).toBe('');
+    expect(desktopIconPath('[Desktop Action new]\nIcon=/x.png\n')).toBe('');
+    expect(desktopIconPath('')).toBe('');
   });
 });

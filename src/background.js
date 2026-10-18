@@ -757,6 +757,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+/**
+ * The icons for the browsers the picker is showing.
+ *
+ * Keyed by id both ways, so no path crosses into the picker page. One call for
+ * the whole set, because `sendNativeMessage` starts a fresh helper process per
+ * message and the helper has to read every bundle on the machine to know which
+ * ones are browsers — asking per icon paid that scan once per button.
+ *
+ * An icon is decoration. Every failure here answers with an empty map and the
+ * picker draws the names alone.
+ */
+async function browserIcons(ids) {
+  const state = await browserChoices();
+  const shown = (state.browsers ?? []).filter((b) =>
+    Array.isArray(ids) ? ids.includes(b.id) : true,
+  );
+  if (!shown.length) return { icons: {} };
+  const reply = await askHelper({ type: 'icons', paths: shown.map((b) => b.path) });
+  const got = reply?.icons ?? {};
+  const icons = {};
+  for (const b of shown) {
+    // Only a data: URL, and only an image one. The helper is a local program
+    // the user installed, but the picker page puts this straight into an
+    // `img.src`, and that is not the place to find out the string was
+    // something else.
+    const url = got[b.path];
+    if (typeof url === 'string' && url.startsWith('data:image/')) icons[b.id] = url;
+  }
+  return { icons };
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'linkward:icons') return undefined;
+  browserIcons(msg.ids).then(sendResponse, () => sendResponse({ icons: {} }));
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== 'linkward:peers') return undefined;
   takeCensus().then(
