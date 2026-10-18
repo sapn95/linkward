@@ -10,14 +10,19 @@
 // Two commands, and deliberately no more. `list` says which browsers are
 // installed; `open` starts one on a URL. Nothing here reads a page, stores
 // anything, or talks to the network.
+//
+// macOS, Linux and Windows. No architecture split: this is a node script, so
+// arm64 and x86-64 run the same file.
 
-import { readdirSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, existsSync, statSync, readFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
+import { macBrowser, desktopBrowser, windowsBrowsers, tidy } from './parse.mjs';
+
+const OS = platform();
 
 // Native messaging frames every message with a 32-bit little-endian length.
-// Firefox refuses anything over 1 MB from us; nothing here comes close.
 function send(payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8');
   const head = Buffer.alloc(4);
@@ -25,18 +30,8 @@ function send(payload) {
   process.stdout.write(Buffer.concat([head, body]));
 }
 
-/**
- * Every installed app that declares it can open an http(s) URL.
- *
- * By CAPABILITY and never by a list of known names: a list is wrong the first
- * time somebody installs a browser nobody thought of, and it would take a
- * release to learn one. An app that handles `http` is a browser for this
- * purpose, whatever it calls itself.
- *
- * Firefox itself is excluded. Offering to open a link in the browser the link
- * is already in is a button that does nothing.
- */
-function installedBrowsers() {
+// --- macOS ------------------------------------------------------------------
+function macBrowsers() {
   const roots = ['/Applications', join(homedir(), 'Applications')];
   const found = [];
   for (const root of roots) {
@@ -54,46 +49,85 @@ function installedBrowsers() {
       } catch {
         continue;
       }
-      const schemes = new Set(
-        (info.CFBundleURLTypes ?? [])
-          .flatMap((t) => t.CFBundleURLSchemes ?? [])
-          .map((s) => String(s).toLowerCase()),
-      );
-      // All three, and `file` is the one that does the work. Measured on a real
-      // machine: iTerm2, Hammerspoon and VLC all claim `http` and `https` —
-      // Launch Services agrees they are http handlers — and none of them claims
-      // `file`. A browser opens a local page too. That is a capability and not
-      // a list of names, which is the whole point: a list is wrong the first
-      // time somebody installs a browser nobody thought of.
-      if (!schemes.has('http') || !schemes.has('https') || !schemes.has('file')) continue;
-      const id = info.CFBundleIdentifier;
-      if (typeof id !== 'string' || !id) continue;
-      if (id.startsWith('org.mozilla.firefox')) continue;
-      found.push({
-        id,
-        name: info.CFBundleName ?? name.replace(/\.app$/, ''),
-        path: app,
-      });
+      const browser = macBrowser(info, app, name.replace(/\.app$/, ''));
+      if (browser) found.push(browser);
     }
   }
-  // Deduplicated by bundle id: the same browser can sit in both roots, and the
-  // user-level copy is the one that was installed deliberately.
-  const byId = new Map();
-  for (const b of found) if (!byId.has(b.id)) byId.set(b.id, b);
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return found;
+}
+
+// --- Linux ------------------------------------------------------------------
+function linuxBrowsers() {
+  const dirs = [
+    join(homedir(), '.local/share/applications'),
+    '/usr/local/share/applications',
+    '/usr/share/applications',
+    '/var/lib/flatpak/exports/share/applications',
+    join(homedir(), '.local/share/flatpak/exports/share/applications'),
+  ];
+  const found = [];
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith('.desktop')) continue;
+      let body;
+      try {
+        body = readFileSync(join(dir, file), 'utf8');
+      } catch {
+        continue;
+      }
+      const browser = desktopBrowser(body, file.replace(/\.desktop$/, ''));
+      if (browser) found.push(browser);
+    }
+  }
+  return found;
+}
+
+// --- Windows ----------------------------------------------------------------
+function winBrowsers() {
+  const found = [];
+  const read = (key) => {
+    try {
+      return execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8' });
+    } catch {
+      return '';
+    }
+  };
+  for (const root of ['HKLM', 'HKCU']) {
+    let keys;
+    try {
+      keys = execFileSync('reg', ['query', `${root}\\SOFTWARE\\Clients\\StartMenuInternet`], {
+        encoding: 'utf8',
+      });
+    } catch {
+      continue;
+    }
+    found.push(...windowsBrowsers(keys, read));
+  }
+  return found;
+}
+
+/**
+ * Every installed browser, whatever this machine is.
+ *
+ * Firefox itself is excluded: offering to open a link in the browser the link
+ * is already in is a button that does nothing.
+ */
+function installedBrowsers() {
+  return tidy(OS === 'darwin' ? macBrowsers() : OS === 'win32' ? winBrowsers() : linuxBrowsers());
 }
 
 /**
  * Start a browser on a URL.
  *
  * The URL is checked here and not only in the extension. This process is
- * reachable by anything the browser lets talk to it, and `open` will hand a
- * `file://` or a `javascript:` string straight to the application.
+ * reachable by anything the browser lets talk to it, and the launcher will hand
+ * a `file://` or a `javascript:` string straight to the application.
  *
- * `open -a <path>` takes the application by PATH rather than by name: two apps
- * can share a name, and the path is what the list above actually reported.
+ * The target is checked against what `list` actually reported, so a path cannot
+ * be invented by whoever sent the message.
  */
-function openIn(appPath, url) {
+function openIn(target, url) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -103,21 +137,33 @@ function openIn(appPath, url) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { ok: false, why: `refusing ${parsed.protocol}` };
   }
-  if (typeof appPath !== 'string' || !appPath.startsWith('/') || !existsSync(appPath)) {
-    return { ok: false, why: 'no such application' };
-  }
+  const known = installedBrowsers().find((b) => b.path === target);
+  if (!known) return { ok: false, why: 'no such browser' };
   try {
-    if (!statSync(appPath).isDirectory()) return { ok: false, why: 'not an application' };
-    // Detached: this helper exits as soon as Firefox disconnects, and a child
-    // still attached to its pipes would be killed with it.
-    spawn('/usr/bin/open', ['-a', appPath, parsed.href], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
+    if (OS === 'darwin') {
+      if (!existsSync(known.path) || !statSync(known.path).isDirectory()) {
+        return { ok: false, why: 'not an application' };
+      }
+      detach('/usr/bin/open', ['-a', known.path, parsed.href]);
+    } else if (OS === 'win32') {
+      detach(known.path, [parsed.href]);
+    } else {
+      // The Exec line can carry arguments of its own, and they come before the
+      // URL. Split on whitespace outside quotes, which is what a launcher does.
+      const parts = known.path.match(/"[^"]*"|\S+/g) ?? [];
+      const bin = (parts.shift() ?? '').replace(/^"(.*)"$/, '$1');
+      if (!bin) return { ok: false, why: 'no command' };
+      detach(bin, [...parts.map((p) => p.replace(/^"(.*)"$/, '$1')), parsed.href]);
+    }
     return { ok: true };
   } catch (e) {
-    return { ok: false, why: String(e.message ?? e).slice(0, 120) };
+    return { ok: false, why: String(e?.message ?? e).slice(0, 120) };
   }
+}
+
+/** Started and let go: this helper exits when Firefox disconnects. */
+function detach(command, args) {
+  spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
 }
 
 // --- the stdin frame reader -------------------------------------------------

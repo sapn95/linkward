@@ -7,8 +7,16 @@ it: `protocol_handlers` only registers Firefox _as_ a handler, and
 
 ## Install
 
+macOS and Linux:
+
 ```sh
 ./native/install.sh
+```
+
+Windows, in PowerShell:
+
+```powershell
+.\native\install.ps1
 ```
 
 That writes `ch.sapn.linkward.json` into Firefox's
@@ -17,7 +25,14 @@ exactly one extension id to talk to it. Then switch the feature on in linkward's
 settings — Firefox asks for the `nativeMessaging` permission at that point,
 which is why the permission is **optional** and nobody sees it at install.
 
-Needs `node` on `PATH`.
+Needs `node` on `PATH`. No architecture split: this is a node script, so arm64
+and x86-64 run the same file.
+
+Windows differs in two ways, which is why it has its own script. Firefox finds
+the manifest through the **registry** rather than a directory, and the manifest
+must point at something Windows can execute — a `.mjs` is not, so a `.cmd`
+wrapper is written beside it and that is what gets registered. The key goes in
+`HKCU`, so no administrator is needed.
 
 ## What it does
 
@@ -30,8 +45,24 @@ Two commands and deliberately no more.
 
 Browsers are found by **capability**, never by a list of known names: a list is
 wrong the first time somebody installs a browser nobody thought of, and it would
-take a release to learn one. An app that declares the `http` scheme in its
-`Info.plist` is a browser for this purpose, whatever it calls itself.
+take a release to learn one. Each platform has its own form of the same
+question, and the third column is the one that does the work.
+
+|         | Where it looks                      | Qualifies on                                           |
+| ------- | ----------------------------------- | ------------------------------------------------------ |
+| macOS   | `Info.plist` of every `.app`        | `http`, `https` **and** `file`                         |
+| Linux   | `.desktop` entries                  | `x-scheme-handler/http`, `…/https` **and** `text/html` |
+| Windows | `StartMenuInternet` in the registry | being registered there at all                          |
+
+On macOS, `file` was measured rather than assumed: iTerm2, Hammerspoon and VLC
+all claim `http` and `https`, and Launch Services agrees they are http handlers.
+None of them claims `file`. A browser opens a local page too. `text/html` is the
+same capability in the shape the Linux desktop uses. Windows keeps the list
+itself, so reading it _is_ the check.
+
+The decision is in [`parse.mjs`](parse.mjs), which takes text rather than a
+filesystem: the helper can only ever run on one platform at a time, so the part
+that decides is tested against fixtures from all three.
 
 ## What it does not do
 

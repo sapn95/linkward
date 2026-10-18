@@ -326,18 +326,31 @@ no API for it, `protocol_handlers` only registers Firefox _as_ a handler, and
 talks over `nativeMessaging` to a small script you install yourself:
 
 ```sh
-./native/install.sh
+./native/install.sh          # macOS and Linux
+.\native\install.ps1         # Windows, in PowerShell
 ```
 
 Then tick **Other browsers** in the settings. Firefox asks for the permission at
 that point, which is why it is optional and nobody sees it at install.
 
 Browsers are found by **capability**, never by a list of known names: a list is
-wrong the first time somebody installs a browser nobody thought of. An app
-qualifies when it declares `http`, `https` **and** `file`. The third one does
-the work — measured on a real machine, iTerm2, Hammerspoon and VLC all claim
-`http` and `https`, and Launch Services agrees they are http handlers. None of
-them claims `file`. A browser opens a local page too.
+wrong the first time somebody installs a browser nobody thought of. Each
+platform has its own form of the same question:
+
+|         | Where it looks                      | Qualifies on                                           |
+| ------- | ----------------------------------- | ------------------------------------------------------ |
+| macOS   | `Info.plist` of every `.app`        | `http`, `https` **and** `file`                         |
+| Linux   | `.desktop` entries                  | `x-scheme-handler/http`, `…/https` **and** `text/html` |
+| Windows | `StartMenuInternet` in the registry | being registered there at all                          |
+
+The third column is the one that does the work. On macOS, `file` was measured
+rather than assumed: iTerm2, Hammerspoon and VLC all claim `http` and `https`,
+and Launch Services agrees they are http handlers. None of them claims `file`.
+A browser opens a local page too. `text/html` is the same capability in the
+shape the Linux desktop uses, and Windows keeps the list itself.
+
+No architecture split — the helper is a node script, so arm64 and x86-64 run
+the same file.
 
 Tick individual browsers in the settings to show only those. Ticking none shows
 all of them, which is not the same as none: hiding every browser is what

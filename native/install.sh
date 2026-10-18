@@ -19,7 +19,11 @@ HOST="$HERE/host.mjs"
 case "$(uname -s)" in
   Darwin) DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" ;;
   Linux)  DIR="$HOME/.mozilla/native-messaging-hosts" ;;
-  *) echo "unsupported platform: $(uname -s)" >&2; exit 1 ;;
+  *)
+    echo "unsupported platform: $(uname -s)" >&2
+    echo "On Windows run native/install.ps1 in PowerShell instead." >&2
+    exit 1
+    ;;
 esac
 
 command -v node >/dev/null 2>&1 || {
