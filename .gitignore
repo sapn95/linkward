@@ -5,3 +5,9 @@ coverage/
 *.zip
 .DS_Store
 .vitest/
+
+# Written by native/install.sh, and specific to the machine it ran on:
+# it carries that machine’s absolute path to node.
+native/host.sh
+native/host.cmd
+native/ch.sapn.linkward.json

@@ -121,15 +121,34 @@
         <h2>Other browsers</h2>
         <p class="note">
           The picker can hand a link to a browser that is not Firefox. A Firefox add-on cannot start
-          an application on its own, so this needs a small helper installed alongside it &mdash; run
-          <code>native/install.sh</code> from the linkward repository. Firefox asks for the
-          <b>nativeMessaging</b> permission when you tick this, not when you install the add-on.
+          an application on its own, so this needs one small helper on your computer &mdash; tick
+          the box and the page will hand it to you. Firefox asks for the <b>nativeMessaging</b>
+          permission at that point, not when you install the add-on.
         </p>
         <label class="check">
           <input id="browsers-enabled" type="checkbox" />
           Offer other browsers in the picker
         </label>
         <p class="note" id="browsers-state"></p>
+
+        <!-- Shown only when the helper is missing. "Run native/install.sh from
+             the repository" is an instruction for somebody who already has the
+             repository, and most people who install this from the store never
+             will — so the page hands over the installer it carries. -->
+        <div id="helper-install" hidden>
+          <div class="row">
+            <button id="helper-download" type="button">Download the installer</button>
+            <button id="helper-recheck" type="button">Check again</button>
+          </div>
+          <p class="note">Then run this one line in a terminal:</p>
+          <pre class="sample" id="helper-command"></pre>
+          <button class="copy" type="button" data-copy="helper-command">Copy the command</button>
+          <p class="note">
+            It writes two files into your own account and one small file telling Firefox where they
+            are. Nothing needs an administrator, and the script is plain text you can read before
+            you run it.
+          </p>
+        </div>
         <!-- One box per browser the helper found. Nothing ticked means ALL of
              them, which is not the same as none: a fresh install has chosen
              nothing, and reading that as "hide everything" would make the
