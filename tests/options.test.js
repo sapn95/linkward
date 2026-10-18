@@ -36,6 +36,12 @@ async function mount({
   // Undefined by default, which is what an event page that is not another add-on's
   // problem answers: nothing found.
   peers = undefined,
+  // What the background answers about other browsers. The helper is a separate
+  // install, so "nothing" is the normal case and the default.
+  browsers = { enabled: false, granted: false, installed: false, browsers: [] },
+  // A build that does not declare the permission REJECTS rather than answering
+  // false. The Chrome manifest is exactly that build.
+  grantThrows = false,
 } = {}) {
   document.documentElement.innerHTML = HTML.replace(/<!doctype html>/i, '');
   requested = [];
@@ -47,8 +53,11 @@ async function mount({
       getManifest: () => ({ version: '9.9.9' }),
       // The pages ask the background to write, and to take the peer census;
       // this is the background.
-      sendMessage: (msg) =>
-        msg?.type === 'linkward:peers' ? Promise.resolve(peers) : rulesBackend()(msg),
+      sendMessage: (msg) => {
+        if (msg?.type === 'linkward:peers') return Promise.resolve(peers);
+        if (msg?.type === 'linkward:browsers') return Promise.resolve(browsers);
+        return rulesBackend()(msg);
+      },
     },
     storage: { sync: makeArea({ settings, rules }), local: makeArea() },
   };
@@ -58,6 +67,7 @@ async function mount({
       contains: vi.fn(async () => held),
       request: vi.fn(async (p) => {
         requested.push(p);
+        if (grantThrows) throw new Error('permission not declared in the manifest');
         held = grant;
         return grant;
       }),
@@ -889,5 +899,86 @@ describe('which build this is', () => {
     await import('../src/options/options.js');
     await settle(20);
     expect($('version').textContent).toBe('linkward');
+  });
+});
+
+// A Firefox extension cannot start another application, so this whole section
+// stands on a helper the user installs separately — and on a permission the
+// Chrome build does not even declare.
+describe('the other-browsers section', () => {
+  const CHROME = { id: 'com.example.chrome', name: 'Chrome', path: '/Applications/Chrome.app' };
+
+  it('is not on the page at all in the Chrome build', async () => {
+    // native/install.sh writes a Firefox native manifest, and the build strips
+    // the permission from the Chrome manifest for that reason. Offering the
+    // section there would promise a feature with nothing behind it.
+    await mount({ firefox: false });
+    expect($('browsers-section').hidden).toBe(true);
+  });
+
+  it('is on the page in the Firefox build', async () => {
+    await mount({ firefox: true });
+    expect($('browsers-section').hidden).toBe(false);
+  });
+
+  it('says which of the three "no" answers it is', async () => {
+    // Collapsing them into an empty list would leave the page with nothing to
+    // say about why the picker shows no browsers.
+    await mount({
+      settings: { browsers: { enabled: true } },
+      browsers: { enabled: true, granted: false, installed: false, browsers: [] },
+    });
+    expect($('browsers-state').textContent).toMatch(/permission/i);
+
+    await mount({
+      settings: { browsers: { enabled: true } },
+      browsers: { enabled: true, granted: true, installed: false, browsers: [] },
+    });
+    expect($('browsers-state').textContent).toMatch(/helper is not installed/i);
+
+    await mount({
+      settings: { browsers: { enabled: true } },
+      browsers: { enabled: true, granted: true, installed: true, all: [], browsers: [] },
+    });
+    expect($('browsers-state').textContent).toMatch(/no other browser/i);
+  });
+
+  it('lists what the helper found, all ticked when nothing was chosen', async () => {
+    await mount({
+      settings: { browsers: { enabled: true, show: [] } },
+      browsers: {
+        enabled: true,
+        granted: true,
+        installed: true,
+        all: [CHROME],
+        browsers: [CHROME],
+      },
+    });
+    const boxes = [...$('browsers-list').querySelectorAll('input[type=checkbox]')];
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].checked).toBe(true);
+    expect($('browsers-state').textContent).toMatch(/All 1 shown/);
+  });
+
+  it('does not leave the box ticked when the request is rejected outright', async () => {
+    // A refused prompt answers false; a build that does not declare the
+    // permission rejects. An uncaught rejection would leave the box ticked
+    // over a feature that cannot work.
+    await mount({ grantThrows: true });
+    $('browsers-enabled').checked = true;
+    $('browsers-enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('browsers-enabled').checked).toBe(false);
+  });
+
+  it('does not leave the box ticked when the permission is refused', async () => {
+    // A refused prompt answers false. A build that does not declare the
+    // permission REJECTS, and an uncaught rejection would leave the box ticked
+    // over a feature that cannot work.
+    await mount({ grant: false });
+    $('browsers-enabled').checked = true;
+    $('browsers-enabled').dispatchEvent(new Event('change'));
+    await settle();
+    expect($('browsers-enabled').checked).toBe(false);
   });
 });

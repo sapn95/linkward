@@ -141,6 +141,36 @@ export function helperPermission() {
   return { permissions: ['nativeMessaging'] };
 }
 
+/** Held? False on any doubt: a wrong yes hides the state this reports. */
+export async function hasHelperPermission() {
+  const api = permissions();
+  if (!api?.contains) return false;
+  try {
+    return await api.contains(helperPermission());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Must be the FIRST thing in a click handler: permissions.request stops being
+ * user-initiated the moment the handler awaits anything else.
+ *
+ * False rather than a throw on refusal AND on rejection. A refused prompt
+ * answers false, but a build that does not declare the permission rejects —
+ * and an uncaught rejection would leave a tick box on over a feature that
+ * cannot work.
+ */
+export async function requestHelperPermission() {
+  const api = permissions();
+  if (!api?.request) return false;
+  try {
+    return await api.request(helperPermission());
+  } catch {
+    return false;
+  }
+}
+
 /** The Firefox build, told apart by its own extension origin. No permission. */
 export function isFirefox() {
   try {

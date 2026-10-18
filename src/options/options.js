@@ -5,11 +5,11 @@ import {
   requestWatchPermissions,
   dropWatchPermissions,
   isFirefox,
+  requestHelperPermission,
   listContainers,
   containerColor,
 } from '../lib/containers.js';
 import { toTransfer, fromTransfer, fileName } from '../lib/transfer.js';
-import { helperPermission } from '../lib/containers.js';
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
@@ -401,6 +401,12 @@ await init();
 // all. An empty list with no explanation would read as "this does not work".
 
 async function showBrowserSettings() {
+  // Firefox only. native/install.sh writes a Firefox native manifest, and the
+  // build strips the permission from the Chrome manifest for that reason — so
+  // on Chrome this section would offer a feature with nothing behind it, and
+  // ticking it would ask for a permission that build does not declare.
+  if (!isFirefox()) return;
+  $('browsers-section').hidden = false;
   const settings = await getSettings().catch(() => ({}));
   const on = settings.browsers?.enabled === true;
   $('browsers-enabled').checked = on;
@@ -471,7 +477,10 @@ $('browsers-enabled').addEventListener('change', async (event) => {
   // FIRST, before any await: permissions.request must run inside a user
   // gesture, and a handler stops being user-initiated the moment it awaits.
   const wanted = event.target.checked;
-  const granted = wanted ? await chrome.permissions.request(helperPermission()) : true;
+  // Caught, not awaited bare. A refused prompt answers false, but a build that
+  // does not declare the permission REJECTS — and an uncaught rejection here
+  // would leave the box ticked over a feature that cannot work.
+  const granted = wanted ? await requestHelperPermission() : true;
   if (wanted && !granted) {
     event.target.checked = false;
     $('browsers-state').textContent = 'Firefox refused, or the request was dismissed.';

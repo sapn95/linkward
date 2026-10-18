@@ -113,7 +113,11 @@
         </label>
       </section>
 
-      <section>
+      <!-- Hidden on Chrome in options.js. The build strips `nativeMessaging`
+           from that manifest, because the installer writes a Firefox native
+           manifest and there is nothing on the other end — so the section would
+           offer a feature that build does not have. -->
+      <section id="browsers-section" hidden>
         <h2>Other browsers</h2>
         <p class="note">
           The picker can hand a link to a browser that is not Firefox. A Firefox add-on cannot start

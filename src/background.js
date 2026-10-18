@@ -19,7 +19,13 @@ import {
   transitionIsInternal,
 } from './lib/candidates.js';
 import { noteFocusChange, readFocusState, seedFocusState } from './lib/focus.js';
-import { isFirefox, listContainers, resolveRule, hasWatchPermissions } from './lib/containers.js';
+import {
+  isFirefox,
+  listContainers,
+  resolveRule,
+  hasWatchPermissions,
+  hasHelperPermission,
+} from './lib/containers.js';
 import { getSettings, getRules, setRule, removeRule, setRules } from './lib/storage.js';
 import { RULE_MESSAGES } from './lib/rules-client.js';
 import { readBrowsers, visibleBrowsers } from './lib/browsers.js';
@@ -703,9 +709,7 @@ async function browserChoices() {
   const wanted = settings?.browsers ?? {};
   if (wanted.enabled !== true)
     return { enabled: false, granted: false, installed: false, browsers: [] };
-  const granted = await chrome.permissions
-    .contains({ permissions: ['nativeMessaging'] })
-    .catch(() => false);
+  const granted = await hasHelperPermission();
   if (!granted) return { enabled: true, granted: false, installed: false, browsers: [] };
   const reply = await askHelper({ type: 'list' });
   if (!reply) return { enabled: true, granted: true, installed: false, browsers: [] };
