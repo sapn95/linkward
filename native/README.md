@@ -35,8 +35,10 @@ cannot fix.
 
 Most people never run these scripts. linkward's settings page carries both
 sources and writes an installer for the machine it is running on, so switching
-the feature on is a download and one line. No architecture split: this is a node script, so arm64
-and x86-64 run the same file.
+the feature on is a download and one line.
+
+No architecture split: this is a node script, so arm64 and x86-64 run the same
+file.
 
 Windows differs in two ways, which is why it has its own script. Firefox finds
 the manifest through the **registry** rather than a directory, and the manifest
