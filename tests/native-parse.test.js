@@ -190,6 +190,21 @@ describe('the icon a bundle names', () => {
     expect(macIconFile(null)).toBe('');
     expect(macIconFile({ CFBundleIconFile: '   ' })).toBe('');
   });
+
+  it('refuses a path, because the key means a name in the bundle', () => {
+    // Somebody else's Info.plist, joined onto a path this helper reads and
+    // hands to the browser. The key names a file in Contents/Resources; a
+    // bundle that puts a traversal there is not naming its icon.
+    for (const named of [
+      '../../../../etc/passwd',
+      'sub/app.icns',
+      '..\\windows\\x.icns',
+      '.hidden.icns',
+      '.',
+    ]) {
+      expect(macIconFile({ CFBundleIconFile: named })).toBe('');
+    }
+  });
 });
 
 describe('the icon a .desktop entry names', () => {

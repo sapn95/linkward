@@ -123,11 +123,17 @@ function isFirefox(value) {
  * `AppIconUpdated` and Chrome ships `app.icns`, both legal — so the suffix is
  * added when it is missing rather than assumed either way.
  *
- * @returns {string} a file name, or '' when the bundle names none
+ * A NAME, and anything else is refused. The value comes out of a third party's
+ * Info.plist and is about to be joined onto a path the helper then reads and
+ * hands to the browser. `../../..` in there would read a file somewhere else
+ * entirely, and a bundle has no reason to name one: the key means a file in
+ * its own Resources directory.
+ *
+ * @returns {string} a file name, or '' when the bundle names none or names a path
  */
 export function macIconFile(info) {
   const named = text(info?.CFBundleIconFile);
-  if (!named) return '';
+  if (!named || /[/\\]/.test(named) || named.startsWith('.')) return '';
   return named.toLowerCase().endsWith('.icns') ? named : `${named}.icns`;
 }
 
